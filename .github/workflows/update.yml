@@ -15,7 +15,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pacman -Syu --noconfirm --needed sudo git base-devel openssh python python-pip python-yaml python-requests python-jinja2
+          pacman -Syu --noconfirm --needed git base-devel openssh python python-pip
 
       - name: Configure Git
         run: |
