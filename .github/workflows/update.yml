@@ -15,7 +15,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pacman -Syu --noconfirm --needed git base-devel sudo
+          pacman -Syu --noconfirm --needed git base-devel sudo openssh
 
       - name: Configure Git
         run: |
