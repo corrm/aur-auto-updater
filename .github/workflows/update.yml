@@ -24,13 +24,12 @@ jobs:
 
       - name: Setup SSH for AUR
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
-
-          # Also setup SSH for GitHub (for pushing state if needed)
-          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          mkdir -p /root/.ssh
+          echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > /root/.ssh/id_ed25519
+          chmod 700 /root/.ssh
+          chmod 600 /root/.ssh/id_ed25519
+          ssh-keyscan aur.archlinux.org >> /root/.ssh/known_hosts
+          ssh-keyscan github.com >> /root/.ssh/known_hosts
 
       - name: Install deps
         run: sudo pip install pyyaml requests jinja2 --break-system-packages
