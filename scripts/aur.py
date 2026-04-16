@@ -28,26 +28,24 @@ def exists(pkgname: str) -> bool:
             ["git", "ls-remote", url],
             capture_output=True,
             text=True,
-            timeout=15
+            timeout=15,
         )
 
-        # If ls-remote succeeds (even with no output), repo exists
         if result.returncode == 0:
             print(f"  [AUR] ✅ Package EXISTS in AUR")
             return True
 
-        # Check stderr for specific errors
         stderr_lower = result.stderr.lower()
 
-        # Repository doesn't exist
         if "not found" in stderr_lower or "does not appear to be a git repository" in stderr_lower:
             print(f"  [AUR] ❌ Package NOT found in AUR (new package)")
             return False
 
-        # SSH authentication errors - this means the repo likely exists but we can't access
-        # In CI environments, this shouldn't happen if SSH key is properly configured
-        # However, we'll assume the package doesn't exist and continue (don't fail fast)
-        if "permission denied" in stderr_lower or "publickey" in stderr_lower or "host key verification failed" in stderr_lower:
+        if (
+            "permission denied" in stderr_lower
+            or "publickey" in stderr_lower
+            or "host key verification failed" in stderr_lower
+        ):
             print(f"  [AUR] ❌ SSH authentication FAILED")
             print(f"  [AUR] 🔎 Debug info:")
             print(f"  [AUR]     URL: {url}")
@@ -55,7 +53,6 @@ def exists(pkgname: str) -> bool:
             print(f"  [AUR]     Stderr: {result.stderr.strip()}")
             print(f"  [AUR]     Stdout: {result.stdout.strip() if result.stdout.strip() else '(empty)'}")
 
-            # Check for common SSH issues
             if "permission denied (publickey)" in stderr_lower:
                 print(f"  [AUR] 💡 Possible causes:")
                 print(f"  [AUR]     - AUR_SSH_PRIVATE_KEY secret is missing or empty")
@@ -67,11 +64,9 @@ def exists(pkgname: str) -> bool:
                 print(f"  [AUR]     - known_hosts file is missing aur.archlinux.org")
                 print(f"  [AUR]     - SSH strict host key checking is enabled")
 
-            # Don't fail fast - assume package doesn't exist and let publish handle it
             print(f"  [AUR] ⚠️  Assuming package does not exist due to SSH error")
             return False
 
-        # Other errors - assume doesn't exist
         print(f"  [AUR] ⚠️  Git check failed: {result.stderr.strip()}")
         print(f"  [AUR] ❌ Package NOT found in AUR (new package)")
         return False
@@ -107,7 +102,6 @@ def clone(repo: str, dest: str = None) -> str:
 
     os.makedirs(os.path.dirname(dest), exist_ok=True)
 
-    # Remove existing clone if present
     if os.path.exists(dest):
         shutil.rmtree(dest)
 
@@ -115,7 +109,7 @@ def clone(repo: str, dest: str = None) -> str:
     subprocess.check_call([
         "git", "clone", "--depth", "1",
         f"ssh://aur@aur.archlinux.org/{repo}.git",
-        dest
+        dest,
     ])
     return dest
 
@@ -134,87 +128,78 @@ def pull(repo_path: str) -> None:
 
 
 def generate_srcinfo(repo_path: str) -> None:
-    """Generate .SRCINFO file from PKGBUILD using pure Python.
+    """Generate .SRCINFO file from a rendered PKGBUILD using pure Python.
 
-    This function parses a PKGBUILD file and generates a valid .SRCINFO
-    file without requiring makepkg (which cannot run as root).
+    Parses the PKGBUILD produced by the Jinja2 template rendering step
+    (build/pkgname/PKGBUILD) and writes a valid .SRCINFO beside it.
+    Does not require makepkg so it works when running as root in CI.
+
+    The data flow is:
+        packages/foo.yaml → Jinja2 template → PKGBUILD → (this fn) → .SRCINFO
 
     Args:
-        repo_path: Path to the repository containing PKGBUILD.
+        repo_path: Path to the directory containing PKGBUILD.
 
     Raises:
-        FileNotFoundError: If PKGBUILD doesn't exist
-        Exception: If parsing fails
+        FileNotFoundError: If PKGBUILD does not exist.
+        ValueError: If required fields (pkgname, pkgver, pkgrel) are missing.
     """
     print(f"  [AUR] 📝 Generating .SRCINFO...")
 
     pkgbuild_path = f"{repo_path}/PKGBUILD"
-
     if not os.path.exists(pkgbuild_path):
         raise FileNotFoundError(f"PKGBUILD not found at {pkgbuild_path}")
 
-    # Read PKGBUILD content
-    with open(pkgbuild_path, 'r') as f:
-        pkgbuild_content = f.read()
+    with open(pkgbuild_path, "r") as f:
+        content = f.read()
 
-    # Parse PKGBUILD variables
-    srcinfo_lines = []
-
-    # Simple bash variable extraction for PKGBUILD
-    def extract_value(content: str, varname: str) -> str | None:
-        """Extract a variable value from PKGBUILD content."""
-        import re
-        # Match patterns like: varname=value or varname=(values)
-        pattern = rf'^{varname}\s*=\s*(.+?)\s*$'
-        match = re.search(pattern, content, re.MULTILINE)
+    def extract_scalar(varname: str) -> str | None:
+        """Extract a scalar bash variable, stripping surrounding quotes."""
+        # Double-quoted: varname="value"
+        match = re.search(rf'^{varname}\s*=\s*"([^"]*)"', content, re.MULTILINE)
+        if match:
+            return match.group(1)
+        # Single-quoted: varname='value'
+        match = re.search(rf"^{varname}\s*=\s*'([^']*)'", content, re.MULTILINE)
+        if match:
+            return match.group(1)
+        # Bare: varname=value
+        match = re.search(rf'^{varname}\s*=\s*([^\s(][^\n]*)', content, re.MULTILINE)
         if match:
             return match.group(1).strip()
         return None
 
-    def extract_array(content: str, varname: str) -> list[str]:
-        """Extract an array variable from PKGBUILD content."""
-        import re
-        value = extract_value(content, varname)
-        if not value:
+    def extract_array(varname: str) -> list[str]:
+        """Extract a bash array variable, handling multi-line forms.
+
+        Handles both single-line  varname=(a b c)
+        and multi-line            varname=(
+                                      a
+                                      b
+                                  )
+        Preserves the filename::url rename syntax used in source=().
+        """
+        match = re.search(
+            rf'^{varname}\s*=\s*\((.*?)\)',
+            content,
+            re.MULTILINE | re.DOTALL,
+        )
+        if not match:
             return []
-        # Remove parentheses and split
-        value = value.strip('()')
-        if not value:
-            return []
-        # Split on whitespace, handling quoted strings
+
+        raw = match.group(1)
+        # Tokenize: quoted strings first, then bare words
         items = []
-        current = ''
-        in_quotes = False
-        quote_char = None
-        for char in value:
-            if char in '"\'':
-                if not in_quotes:
-                    in_quotes = True
-                    quote_char = char
-                elif char == quote_char:
-                    in_quotes = False
-                    quote_char = None
-                else:
-                    current += char
-            elif char in ' \t\n' and not in_quotes:
-                if current:
-                    items.append(current.strip('"\''))
-                    current = ''
-            else:
-                current += char
-        if current:
-            items.append(current.strip('"\''))
+        for token in re.findall(r'"[^"]*"|\'[^\']*\'|\S+', raw):
+            items.append(token.strip("\"'"))
         return items
 
-    # Extract basic fields
-    pkgname = extract_value(pkgbuild_content, 'pkgname')
-    pkgver = extract_value(pkgbuild_content, 'pkgver')
-    pkgrel = extract_value(pkgbuild_content, 'pkgrel')
-    epoch = extract_value(pkgbuild_content, 'epoch')
-    pkgdesc = extract_value(pkgbuild_content, 'pkgdesc')
-    url = extract_value(pkgbuild_content, 'url')
-    arch = extract_array(pkgbuild_content, 'arch')
-    license_list = extract_array(pkgbuild_content, 'license')
+    # ------------------------------------------------------------------ #
+    # Required fields
+    # ------------------------------------------------------------------ #
+    pkgname = extract_scalar("pkgname")
+    pkgver  = extract_scalar("pkgver")
+    pkgrel  = extract_scalar("pkgrel")
 
     if not pkgname:
         raise ValueError("Could not extract pkgname from PKGBUILD")
@@ -223,69 +208,51 @@ def generate_srcinfo(repo_path: str) -> None:
     if not pkgrel:
         raise ValueError("Could not extract pkgrel from PKGBUILD")
 
-    # Build SRCINFO content
-    srcinfo_lines.append(f"pkgbase = {pkgname}")
-    srcinfo_lines.append(f"\tpkgver = {pkgver}")
-    srcinfo_lines.append(f"\tpkgrel = {pkgrel}")
-    if epoch:
-        srcinfo_lines.append(f"\tepoch = {epoch}")
-    if pkgdesc:
-        # Clean up pkgdesc (remove quotes)
-        pkgdesc_clean = pkgdesc.strip('"\'')
-        srcinfo_lines.append(f"\tpkgdesc = {pkgdesc_clean}")
-    if url:
-        srcinfo_lines.append(f"\turl = {url.strip('\"\'')}")
+    # ------------------------------------------------------------------ #
+    # Build .SRCINFO lines
+    # ------------------------------------------------------------------ #
+    lines: list[str] = []
 
-    for a in arch:
-        srcinfo_lines.append(f"\tarch = {a}")
+    def scalar_line(key: str, val: str | None) -> None:
+        if val:
+            lines.append(f"\t{key} = {val}")
 
-    for lic in license_list:
-        srcinfo_lines.append(f"\tlicense = {lic.strip('\"\'')}")
+    def array_lines(key: str, vals: list[str]) -> None:
+        for v in vals:
+            lines.append(f"\t{key} = {v}")
 
-    # Extract dependencies
-    depends = extract_array(pkgbuild_content, 'depends')
-    for dep in depends:
-        srcinfo_lines.append(f"\tdepend = {dep.strip('\"\'')}")
+    lines.append(f"pkgbase = {pkgname}")
 
-    makedepends = extract_array(pkgbuild_content, 'makedepends')
-    for dep in makedepends:
-        srcinfo_lines.append(f"\tmakedepend = {dep.strip('\"\'')}")
+    scalar_line("pkgdesc",      extract_scalar("pkgdesc"))
+    scalar_line("pkgver",       pkgver)
+    scalar_line("pkgrel",       pkgrel)
+    scalar_line("epoch",        extract_scalar("epoch"))
+    scalar_line("url",          extract_scalar("url"))
 
-    checkdepends = extract_array(pkgbuild_content, 'checkdepends')
-    for dep in checkdepends:
-        srcinfo_lines.append(f"\tcheckdepend = {dep.strip('\"\'')}")
+    array_lines("arch",         extract_array("arch"))
+    array_lines("license",      extract_array("license"))
+    array_lines("depends",      extract_array("depends"))
+    array_lines("makedepends",  extract_array("makedepends"))
+    array_lines("checkdepends", extract_array("checkdepends"))
+    array_lines("optdepends",   extract_array("optdepends"))
+    array_lines("conflicts",    extract_array("conflicts"))
+    array_lines("provides",     extract_array("provides"))
+    array_lines("replaces",     extract_array("replaces"))
+    array_lines("noextract",    extract_array("noextract"))
+    array_lines("options",      extract_array("options"))
+    array_lines("source",       extract_array("source"))
+    array_lines("sha256sums",   extract_array("sha256sums"))
+    array_lines("sha512sums",   extract_array("sha512sums"))
+    array_lines("md5sums",      extract_array("md5sums"))
+    array_lines("sha1sums",     extract_array("sha1sums"))
 
-    optdepends = extract_array(pkgbuild_content, 'optdepends')
-    for dep in optdepends:
-        srcinfo_lines.append(f"\toptdepend = {dep.strip('\"\'')}")
-
-    # Extract source URLs and checksums
-    sources = extract_array(pkgbuild_content, 'source')
-    sha256sums = extract_array(pkgbuild_content, 'sha256sums')
-    md5sums = extract_array(pkgbuild_content, 'md5sums')
-    sha1sums = extract_array(pkgbuild_content, 'sha1sums')
-    sha512sums = extract_array(pkgbuild_content, 'sha512sums')
-
-    for src in sources:
-        srcinfo_lines.append(f"\tsource = {src.strip('\"\'')}")
-
-    for checksum in sha256sums:
-        srcinfo_lines.append(f"\tsha256sums = {checksum.strip('\"\'')}")
-
-    for checksum in md5sums:
-        srcinfo_lines.append(f"\tmd5sums = {checksum.strip('\"\'')}")
-
-    for checksum in sha1sums:
-        srcinfo_lines.append(f"\tsha1sums = {checksum.strip('\"\'')}")
-
-    for checksum in sha512sums:
-        srcinfo_lines.append(f"\tsha512sums = {checksum.strip('\"\'')}")
-
-    # Write .SRCINFO file
-    srcinfo_content = '\n'.join(srcinfo_lines) + '\n'
+    # AUR's server-side hook requires a pkgname block at the end
+    lines.append("")
+    lines.append(f"pkgname = {pkgname}")
+    lines.append("")
 
     with open(f"{repo_path}/.SRCINFO", "w") as f:
-        f.write(srcinfo_content)
+        f.write("\n".join(lines))
 
     print(f"  [AUR] ✅ .SRCINFO generated successfully")
 
@@ -314,75 +281,59 @@ def publish(pkgname: str, build_dir: str = "build") -> dict[str, str]:
     """Publish a built package to AUR.
 
     Args:
-        pkgname: Name of the package to publish
-        build_dir: Directory containing built PKGBUILD files
+        pkgname: Name of the package to publish.
+        build_dir: Directory containing built PKGBUILD files.
 
     Returns:
-        Dictionary with 'pkgname' and 'status'/'error' keys
+        Dictionary with 'pkgname' and 'status'/'error' keys.
     """
     print(f"\n{'='*60}")
     print(f"[PUBLISH] Publishing: {pkgname}")
     print(f"{'='*60}")
 
     try:
-        # Check if package exists in AUR
-        # Note: exists() now raises PermissionError on SSH auth failure (fast fail)
         in_aur = exists(pkgname)
+        repo_path = f"aur-repos/{pkgname}"
 
         if in_aur:
             print(f"[{pkgname}] 📦 Package exists in AUR - will update")
-            repo_path = f"aur-repos/{pkgname}"
-
-            # Clone/pull the repository
             if os.path.exists(repo_path):
                 pull(repo_path)
             else:
                 clone(pkgname, repo_path)
         else:
             print(f"[{pkgname}] ✨ New package - will create in AUR")
-            repo_path = f"aur-repos/{pkgname}"
-            # For new packages, we need to initialize an empty git repo
             os.makedirs(repo_path, exist_ok=True)
             subprocess.check_call(["git", "init"], cwd=repo_path)
-            # Create initial .gitignore
-            Path(f"{repo_path}/.gitignore").write_text(".SRCINFO\n")
-            subprocess.check_call(["git", "add", "."], cwd=repo_path)
-            subprocess.check_call(["git", "commit", "-m", "initial commit"], cwd=repo_path)
+            # AUR requires the remote to be set before push
+            subprocess.check_call(
+                ["git", "remote", "add", "origin",
+                 f"ssh://aur@aur.archlinux.org/{pkgname}.git"],
+                cwd=repo_path,
+            )
 
-        # Copy PKGBUILD from build directory to repo
         src_pkgbuild = f"{build_dir}/{pkgname}/PKGBUILD"
-        dst_pkgbuild = f"{repo_path}/PKGBUILD"
-
         if not os.path.exists(src_pkgbuild):
             raise FileNotFoundError(f"PKGBUILD not found at {src_pkgbuild}")
 
         print(f"[{pkgname}] 📄 Copying PKGBUILD to repo...")
-        shutil.copy2(src_pkgbuild, dst_pkgbuild)
+        shutil.copy2(src_pkgbuild, f"{repo_path}/PKGBUILD")
 
-        # Generate .SRCINFO
         generate_srcinfo(repo_path)
 
-        # Determine commit message
-        if in_aur:
-            msg = f"upstream update: {pkgname}"
-        else:
-            msg = f"initial package upload: {pkgname}"
-
-        # Commit and push
+        msg = f"upstream update: {pkgname}" if in_aur else f"initial package upload: {pkgname}"
         commit_and_push(repo_path, msg)
 
         print(f"[{pkgname}] ✅ SUCCESS - Published to AUR")
-
         return {"pkgname": pkgname, "status": "published"}
 
     except Exception as e:
         print(f"[{pkgname}] ❌ ERROR: {type(e).__name__}: {e}")
         import traceback
         print(f"[{pkgname}] 📋 Traceback:")
-        for line in traceback.format_exc().split('\n'):
+        for line in traceback.format_exc().split("\n"):
             print(f"         {line}")
 
-        # Clean up failed clone attempt
         repo_path = f"aur-repos/{pkgname}"
         if os.path.exists(repo_path):
             print(f"[{pkgname}] 🧹 Cleaning up failed clone...")
@@ -395,11 +346,11 @@ def publish_all(packages: list[dict[str, str]], build_dir: str = "build") -> dic
     """Publish multiple packages to AUR.
 
     Args:
-        packages: List of package dictionaries with 'pkgname' and 'status' keys
-        build_dir: Directory containing built PKGBUILD files
+        packages: List of package dicts with 'pkgname' and 'status' keys.
+        build_dir: Directory containing built PKGBUILD files.
 
     Returns:
-        Dictionary with published, failed lists
+        Dictionary with 'published' and 'failures' lists.
     """
     published = []
     failures = []

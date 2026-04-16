@@ -22,6 +22,8 @@ jobs:
           git config --global user.name "Islam Nofl"
           git config --global user.email "islamnofl.official@gmail.com"
 
+      # SSH key permissions / ownership in containers
+      # Inside a GitHub Actions container, the home directory can be /root but sometimes the runner mounts things oddly. Be explicit
       - name: Setup SSH for AUR
         run: |
           mkdir -p /root/.ssh
