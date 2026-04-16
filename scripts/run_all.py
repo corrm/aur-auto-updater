@@ -1,32 +1,45 @@
+#!/usr/bin/env python3
+"""Run builds for all packages and generate a report."""
+
 import glob
-import yaml
 import json
 import sys
+from typing import Any
+
+import yaml  # type: ignore[import-untyped]
+
 from build import build
 
-failures = []
-updated = []
 
-for pkgfile in glob.glob("packages/*.yaml"):
-    result = build(pkgfile)
+def main() -> None:
+    """Build all packages and generate a report."""
+    failures: list[dict[str, Any]] = []
+    updated: list[dict[str, Any]] = []
 
-    if result is None:
-        continue
+    for pkgfile in glob.glob("packages/*.yaml"):
+        result = build(pkgfile)
 
-    if "error" in result:
-        failures.append(result)
-    else:
-        updated.append(result)
+        if result is None:
+            continue
 
-report = {
-    "updated": updated,
-    "failures": failures
-}
+        if "error" in result:
+            failures.append(result)
+        else:
+            updated.append(result)
 
-with open("report.json", "w") as f:
-    json.dump(report, f, indent=2)
+    report = {
+        "updated": updated,
+        "failures": failures
+    }
 
-print(report)
+    with open("report.json", "w") as f:
+        json.dump(report, f, indent=2)
 
-if failures:
-    sys.exit(1)
+    print(report)
+
+    if failures:
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

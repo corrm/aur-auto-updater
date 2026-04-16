@@ -1,16 +1,45 @@
-import yaml, hashlib, requests, os
-from jinja2 import Template
+#!/usr/bin/env python3
+"""Build package PKGBUILD files from YAML configurations."""
+
+import hashlib
+import os
+from typing import Any
+
+import requests  # type: ignore[import-untyped]
+import yaml  # type: ignore[import-untyped]
+from jinja2 import Template  # type: ignore[import-untyped]
 
 from upstream import fetch
 from state import load_state, save_state
 from template import select_template
 
-def sha256(url):
-    r = requests.get(url)
+
+def sha256(url: str) -> str:
+    """Download a file from URL and return its SHA256 hash.
+    
+    Args:
+        url: The URL to download from.
+        
+    Returns:
+        SHA256 hash of the downloaded content.
+        
+    Raises:
+        requests.RequestException: If the download fails.
+    """
+    r = requests.get(url, timeout=30)
     r.raise_for_status()
     return hashlib.sha256(r.content).hexdigest()
 
-def build(pkgfile):
+
+def build(pkgfile: str) -> dict[str, Any] | None:
+    """Build a PKGBUILD file for the given package configuration.
+    
+    Args:
+        pkgfile: Path to the package YAML file.
+        
+    Returns:
+        A dictionary with status information, or None if no update needed.
+    """
     cfg = yaml.safe_load(open(pkgfile))
 
     pkgname = cfg["pkgname"]
@@ -38,7 +67,8 @@ def build(pkgfile):
             **cfg,
             pkgver=pkgver,
             download_url=url,
-            sha256=checksum
+            sha256=checksum,
+            debian_config=cfg.get("debian", {})
         )
 
         outdir = f"build/{pkgname}"
