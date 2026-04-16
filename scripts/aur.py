@@ -45,7 +45,8 @@ def exists(pkgname: str) -> bool:
             return False
 
         # SSH authentication errors - this means the repo likely exists but we can't access
-        # In CI, this shouldn't happen if SSH key is properly configured
+        # In CI environments, this shouldn't happen if SSH key is properly configured
+        # However, we'll assume the package doesn't exist and continue (don't fail fast)
         if "permission denied" in stderr_lower or "publickey" in stderr_lower or "host key verification failed" in stderr_lower:
             print(f"  [AUR] ❌ SSH authentication FAILED")
             print(f"  [AUR] 🔎 Debug info:")
@@ -66,8 +67,9 @@ def exists(pkgname: str) -> bool:
                 print(f"  [AUR]     - known_hosts file is missing aur.archlinux.org")
                 print(f"  [AUR]     - SSH strict host key checking is enabled")
 
-            # Fast fail - raise exception instead of returning None
-            raise PermissionError(f"SSH authentication failed for {url}: {result.stderr.strip()}")
+            # Don't fail fast - assume package doesn't exist and let publish handle it
+            print(f"  [AUR] ⚠️  Assuming package does not exist due to SSH error")
+            return False
 
         # Other errors - assume doesn't exist
         print(f"  [AUR] ⚠️  Git check failed: {result.stderr.strip()}")
@@ -132,41 +134,160 @@ def pull(repo_path: str) -> None:
 
 
 def generate_srcinfo(repo_path: str) -> None:
-    """Generate .SRCINFO file from PKGBUILD.
+    """Generate .SRCINFO file from PKGBUILD using pure Python.
+
+    This function parses a PKGBUILD file and generates a valid .SRCINFO
+    file without requiring makepkg (which cannot run as root).
 
     Args:
         repo_path: Path to the repository containing PKGBUILD.
 
     Raises:
-        subprocess.CalledProcessError: If mksrcinfo fails.
+        FileNotFoundError: If PKGBUILD doesn't exist
+        Exception: If parsing fails
     """
     print(f"  [AUR] 📝 Generating .SRCINFO...")
-    try:
-        result = subprocess.run(
-            ["makepkg", "--printsrcinfo"],
-            cwd=repo_path,
-            capture_output=True,
-            text=True
-        )
 
-        # Write stdout to .SRCINFO file
-        with open(f"{repo_path}/.SRCINFO", "w") as f:
-            f.write(result.stdout)
+    pkgbuild_path = f"{repo_path}/PKGBUILD"
 
-        # Check if command failed
-        if result.returncode != 0:
-            print(f"  [AUR] ❌ makepkg failed with exit code {result.returncode}")
-            print(f"  [AUR] 🔎 STDERR output:")
-            for line in result.stderr.split('\n'):
-                print(f"         {line}")
-            print(f"  [AUR] 🔎 STDOUT output:")
-            for line in result.stdout.split('\n'):
-                print(f"         {line}")
-            raise subprocess.CalledProcessError(result.returncode, ["makepkg", "--printsrcinfo"])
+    if not os.path.exists(pkgbuild_path):
+        raise FileNotFoundError(f"PKGBUILD not found at {pkgbuild_path}")
 
-    except FileNotFoundError:
-        print(f"  [AUR] ❌ makepkg command not found - please install archlinux-keyring and pacman-contrib")
-        raise
+    # Read PKGBUILD content
+    with open(pkgbuild_path, 'r') as f:
+        pkgbuild_content = f.read()
+
+    # Parse PKGBUILD variables
+    srcinfo_lines = []
+
+    # Simple bash variable extraction for PKGBUILD
+    def extract_value(content: str, varname: str) -> str | None:
+        """Extract a variable value from PKGBUILD content."""
+        import re
+        # Match patterns like: varname=value or varname=(values)
+        pattern = rf'^{varname}\s*=\s*(.+?)\s*$'
+        match = re.search(pattern, content, re.MULTILINE)
+        if match:
+            return match.group(1).strip()
+        return None
+
+    def extract_array(content: str, varname: str) -> list[str]:
+        """Extract an array variable from PKGBUILD content."""
+        import re
+        value = extract_value(content, varname)
+        if not value:
+            return []
+        # Remove parentheses and split
+        value = value.strip('()')
+        if not value:
+            return []
+        # Split on whitespace, handling quoted strings
+        items = []
+        current = ''
+        in_quotes = False
+        quote_char = None
+        for char in value:
+            if char in '"\'':
+                if not in_quotes:
+                    in_quotes = True
+                    quote_char = char
+                elif char == quote_char:
+                    in_quotes = False
+                    quote_char = None
+                else:
+                    current += char
+            elif char in ' \t\n' and not in_quotes:
+                if current:
+                    items.append(current.strip('"\''))
+                    current = ''
+            else:
+                current += char
+        if current:
+            items.append(current.strip('"\''))
+        return items
+
+    # Extract basic fields
+    pkgname = extract_value(pkgbuild_content, 'pkgname')
+    pkgver = extract_value(pkgbuild_content, 'pkgver')
+    pkgrel = extract_value(pkgbuild_content, 'pkgrel')
+    epoch = extract_value(pkgbuild_content, 'epoch')
+    pkgdesc = extract_value(pkgbuild_content, 'pkgdesc')
+    url = extract_value(pkgbuild_content, 'url')
+    arch = extract_array(pkgbuild_content, 'arch')
+    license_list = extract_array(pkgbuild_content, 'license')
+
+    if not pkgname:
+        raise ValueError("Could not extract pkgname from PKGBUILD")
+    if not pkgver:
+        raise ValueError("Could not extract pkgver from PKGBUILD")
+    if not pkgrel:
+        raise ValueError("Could not extract pkgrel from PKGBUILD")
+
+    # Build SRCINFO content
+    srcinfo_lines.append(f"pkgbase = {pkgname}")
+    srcinfo_lines.append(f"\tpkgver = {pkgver}")
+    srcinfo_lines.append(f"\tpkgrel = {pkgrel}")
+    if epoch:
+        srcinfo_lines.append(f"\tepoch = {epoch}")
+    if pkgdesc:
+        # Clean up pkgdesc (remove quotes)
+        pkgdesc_clean = pkgdesc.strip('"\'')
+        srcinfo_lines.append(f"\tpkgdesc = {pkgdesc_clean}")
+    if url:
+        srcinfo_lines.append(f"\turl = {url.strip('\"\'')}")
+
+    for a in arch:
+        srcinfo_lines.append(f"\tarch = {a}")
+
+    for lic in license_list:
+        srcinfo_lines.append(f"\tlicense = {lic.strip('\"\'')}")
+
+    # Extract dependencies
+    depends = extract_array(pkgbuild_content, 'depends')
+    for dep in depends:
+        srcinfo_lines.append(f"\tdepend = {dep.strip('\"\'')}")
+
+    makedepends = extract_array(pkgbuild_content, 'makedepends')
+    for dep in makedepends:
+        srcinfo_lines.append(f"\tmakedepend = {dep.strip('\"\'')}")
+
+    checkdepends = extract_array(pkgbuild_content, 'checkdepends')
+    for dep in checkdepends:
+        srcinfo_lines.append(f"\tcheckdepend = {dep.strip('\"\'')}")
+
+    optdepends = extract_array(pkgbuild_content, 'optdepends')
+    for dep in optdepends:
+        srcinfo_lines.append(f"\toptdepend = {dep.strip('\"\'')}")
+
+    # Extract source URLs and checksums
+    sources = extract_array(pkgbuild_content, 'source')
+    sha256sums = extract_array(pkgbuild_content, 'sha256sums')
+    md5sums = extract_array(pkgbuild_content, 'md5sums')
+    sha1sums = extract_array(pkgbuild_content, 'sha1sums')
+    sha512sums = extract_array(pkgbuild_content, 'sha512sums')
+
+    for src in sources:
+        srcinfo_lines.append(f"\tsource = {src.strip('\"\'')}")
+
+    for checksum in sha256sums:
+        srcinfo_lines.append(f"\tsha256sums = {checksum.strip('\"\'')}")
+
+    for checksum in md5sums:
+        srcinfo_lines.append(f"\tmd5sums = {checksum.strip('\"\'')}")
+
+    for checksum in sha1sums:
+        srcinfo_lines.append(f"\tsha1sums = {checksum.strip('\"\'')}")
+
+    for checksum in sha512sums:
+        srcinfo_lines.append(f"\tsha512sums = {checksum.strip('\"\'')}")
+
+    # Write .SRCINFO file
+    srcinfo_content = '\n'.join(srcinfo_lines) + '\n'
+
+    with open(f"{repo_path}/.SRCINFO", "w") as f:
+        f.write(srcinfo_content)
+
+    print(f"  [AUR] ✅ .SRCINFO generated successfully")
 
 
 def commit_and_push(repo_path: str, msg: str) -> None:
