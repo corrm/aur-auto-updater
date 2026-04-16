@@ -134,8 +134,8 @@ def generate_srcinfo(repo_path: str) -> None:
     .SRCINFO file. This is the recommended approach by Arch Linux and ensures
     compatibility with AUR requirements.
 
-    When running as root (e.g., in CI), creates a temporary non-root user to
-    safely execute makepkg, as makepkg refuses to run as root for safety reasons.
+    When running as root (e.g., in CI), sets ALLOW_ROOT=1 to allow makepkg
+    to run safely in controlled environments.
 
     The data flow is:
         packages/foo.yaml → Jinja2 template → PKGBUILD → (this fn) → .SRCINFO
@@ -153,53 +153,18 @@ def generate_srcinfo(repo_path: str) -> None:
     if not os.path.exists(pkgbuild_path):
         raise FileNotFoundError(f"PKGBUILD not found at {pkgbuild_path}")
 
-    # Check if we're running as root
-    is_root = os.geteuid() == 0
-    
-    if is_root:
-        # Create a temporary non-root user for makepkg
-        temp_user = "aurbuilduser"
-        print(f"  [AUR] 🔧 Running as root, creating temporary user '{temp_user}'...")
-        
-        try:
-            # Create user if it doesn't exist
-            subprocess.run(
-                ["useradd", "-m", temp_user],
-                check=False,  # Don't fail if user exists
-                capture_output=True,
-            )
-            
-            # Ensure the user owns the repo directory
-            subprocess.run(
-                ["chown", "-R", temp_user, repo_path],
-                check=True,
-            )
-            
-            # Run makepkg as the temporary user
-            print(f"  [AUR] 🏃 Running makepkg as user '{temp_user}'...")
-            subprocess.run(
-                ["su", "-", temp_user, "-c", f"cd {repo_path} && makepkg --printsrcinfo > .SRCINFO"],
-                check=True,
-            )
-            
-        except subprocess.CalledProcessError as e:
-            print(f"  [AUR] ❌ Failed to generate .SRCINFO: {e}")
-            raise
-        finally:
-            # Clean up: change ownership back to root for subsequent operations
-            subprocess.run(
-                ["chown", "-R", "root:root", repo_path],
-                check=False,
-            )
-    else:
-        # Not root, can run makepkg directly
-        print(f"  [AUR] 🏃 Running makepkg...")
-        subprocess.run(
-            ["makepkg", "--printsrcinfo"],
-            cwd=repo_path,
-            check=True,
-            stdout=open(f"{repo_path}/.SRCINFO", "w"),
-        )
+    # Set ALLOW_ROOT=1 for makepkg when running as root (e.g., in CI)
+    env = os.environ.copy()
+    env["ALLOW_ROOT"] = "1"
+
+    print(f"  [AUR] 🏃 Running makepkg (ALLOW_ROOT=1)...")
+    subprocess.run(
+        ["makepkg", "--printsrcinfo"],
+        cwd=repo_path,
+        check=True,
+        env=env,
+        stdout=open(f"{repo_path}/.SRCINFO", "w"),
+    )
 
     print(f"  [AUR] ✅ .SRCINFO generated successfully")
 
