@@ -22,8 +22,10 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-
           ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+
+          # Also setup SSH for GitHub (for pushing state if needed)
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -33,8 +35,24 @@ jobs:
       - name: Install deps
         run: pip install pyyaml requests jinja2
 
+      - name: Restore state cache
+        uses: actions/cache@v4
+        with:
+          path: state
+          key: ${{ runner.os }}-aur-state-${{ hashFiles('packages/*.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-aur-state-
+
       - name: Run sync
         run: python scripts/run_all.py
+
+      - name: Save state cache
+        uses: actions/cache@v4
+        with:
+          path: state
+          key: ${{ runner.os }}-aur-state-${{ hashFiles('packages/*.yaml') }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-aur-state-
 
       - name: Upload report
         uses: actions/upload-artifact@v7

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run build process for all packages and generate report."""
+"""Run build and publish process for all packages and generate report."""
 from __future__ import annotations
 
 import glob
@@ -10,10 +10,11 @@ from typing import Any
 import yaml  # type: ignore[import-untyped]
 
 from build import build
+from aur import publish_all
 
 
 def main() -> int:
-    """Run build process for all packages.
+    """Run build and publish process for all packages.
 
     Returns:
         Exit code (0 for success, 1 if any failures)
@@ -48,6 +49,20 @@ def main() -> int:
         else:
             updated.append(result)
 
+    # Publish packages that were created or updated
+    packages_to_publish = created + updated
+
+    publish_report = {"published": [], "publish_failures": []}
+    if packages_to_publish:
+        print("\n\n" + "="*70)
+        print("🚀 PUBLISHING PACKAGES TO AUR")
+        print("="*70)
+        publish_report = publish_all(packages_to_publish)
+
+        # Add publish failures to main failures list
+        for fail in publish_report.get("failures", []):
+            failures.append(fail)
+
     # Generate comprehensive report
     report = {
         "summary": {
@@ -55,12 +70,16 @@ def main() -> int:
             "created": len(created),
             "updated": len(updated),
             "unchanged": len(unchanged),
-            "failures": len(failures)
+            "failures": len(failures),
+            "published": len(publish_report.get("published", [])),
+            "publish_failures": len(publish_report.get("publish_failures", []))
         },
         "created": created,
         "updated": updated,
         "unchanged": unchanged,
-        "failures": failures
+        "failures": failures,
+        "published": publish_report.get("published", []),
+        "publish_failures": publish_report.get("publish_failures", [])
     }
 
     with open("report.json", "w") as f:
@@ -86,8 +105,13 @@ def main() -> int:
         for pkgname in unchanged:
             print(f"   ✔️  {pkgname}")
 
+    if publish_report.get("published"):
+        print(f"\n🚀 PACKAGES PUBLISHED TO AUR ({len(publish_report['published'])}):")
+        for pkg in publish_report["published"]:
+            print(f"   📤 {pkg['pkgname']}")
+
     if failures:
-        print(f"\n❌ BUILD FAILURES ({len(failures)}):")
+        print(f"\n❌ BUILD/PUBLISH FAILURES ({len(failures)}):")
         for fail in failures:
             print(f"   💥 {fail['pkgname']}: {fail['error']}")
 
@@ -97,21 +121,15 @@ def main() -> int:
     print(f"   ✨ Created:         {len(created)}")
     print(f"   🔄 Updated:         {len(updated)}")
     print(f"   ⏭️  Unchanged:      {len(unchanged)}")
+    print(f"   🚀 Published:       {len(publish_report.get('published', []))}")
     print(f"   ❌ Failures:        {len(failures)}")
     print("-"*70)
-
-    if len(created) + len(updated) > 0:
-        print(f"\n🎯 ACTION REQUIRED: {len(created) + len(updated)} package(s) need to be pushed to AUR")
-
-    print(f"\n💾 Report saved to: report.json")
-    print("\n📋 Full Report JSON:")
-    print(json.dumps(report, indent=2))
 
     if failures:
         print("\n⚠️  Build completed with failures!")
         return 1
 
-    print("\n✅ Build completed successfully!")
+    print("\n✅ Build and publish completed successfully!")
     return 0
 
 
