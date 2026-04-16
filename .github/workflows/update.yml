@@ -25,7 +25,7 @@ jobs:
       - name: Setup SSH for AUR
         run: |
           mkdir -p /root/.ssh
-          echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > /root/.ssh/id_ed25519
+          printf '%s\n' "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > /root/.ssh/id_ed25519
           chmod 700 /root/.ssh
           chmod 600 /root/.ssh/id_ed25519
           ssh-keyscan aur.archlinux.org >> /root/.ssh/known_hosts
