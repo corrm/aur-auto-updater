@@ -17,7 +17,7 @@ def generate_srcinfo(pkgdir: str) -> str:
         subprocess.CalledProcessError: If makepkg fails.
     """
     return subprocess.check_output(
-        ["makepkg", "--printsrcinfo"],
+        ["sudo", "-u", "nobody", "makepkg", "--printsrcinfo"],
         cwd=pkgdir,
         text=True
     )

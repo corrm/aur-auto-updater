@@ -159,7 +159,7 @@ def generate_srcinfo(repo_path: str) -> None:
 
     print(f"  [AUR] 🏃 Running makepkg (ALLOW_ROOT=1)...")
     subprocess.run(
-        ["makepkg", "--printsrcinfo"],
+        ["sudo", "-u", "nobody", "makepkg", "--printsrcinfo"],
         cwd=repo_path,
         check=True,
         env=env,
