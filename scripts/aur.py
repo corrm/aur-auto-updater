@@ -128,11 +128,14 @@ def pull(repo_path: str) -> None:
 
 
 def generate_srcinfo(repo_path: str) -> None:
-    """Generate .SRCINFO file from a rendered PKGBUILD using pure Python.
+    """Generate .SRCINFO file from a rendered PKGBUILD using makepkg.
 
-    Parses the PKGBUILD produced by the Jinja2 template rendering step
-    (build/pkgname/PKGBUILD) and writes a valid .SRCINFO beside it.
-    Does not require makepkg so it works when running as root in CI.
+    Uses the official `makepkg --printsrcinfo` command to generate a valid
+    .SRCINFO file. This is the recommended approach by Arch Linux and ensures
+    compatibility with AUR requirements.
+
+    When running as root (e.g., in CI), creates a temporary non-root user to
+    safely execute makepkg, as makepkg refuses to run as root for safety reasons.
 
     The data flow is:
         packages/foo.yaml → Jinja2 template → PKGBUILD → (this fn) → .SRCINFO
@@ -142,117 +145,61 @@ def generate_srcinfo(repo_path: str) -> None:
 
     Raises:
         FileNotFoundError: If PKGBUILD does not exist.
-        ValueError: If required fields (pkgname, pkgver, pkgrel) are missing.
+        subprocess.CalledProcessError: If makepkg fails.
     """
-    print(f"  [AUR] 📝 Generating .SRCINFO...")
+    print(f"  [AUR] 📝 Generating .SRCINFO using makepkg...")
 
     pkgbuild_path = f"{repo_path}/PKGBUILD"
     if not os.path.exists(pkgbuild_path):
         raise FileNotFoundError(f"PKGBUILD not found at {pkgbuild_path}")
 
-    with open(pkgbuild_path, "r") as f:
-        content = f.read()
-
-    def extract_scalar(varname: str) -> str | None:
-        """Extract a scalar bash variable, stripping surrounding quotes."""
-        # Double-quoted: varname="value"
-        match = re.search(rf'^{varname}\s*=\s*"([^"]*)"', content, re.MULTILINE)
-        if match:
-            return match.group(1)
-        # Single-quoted: varname='value'
-        match = re.search(rf"^{varname}\s*=\s*'([^']*)'", content, re.MULTILINE)
-        if match:
-            return match.group(1)
-        # Bare: varname=value
-        match = re.search(rf'^{varname}\s*=\s*([^\s(][^\n]*)', content, re.MULTILINE)
-        if match:
-            return match.group(1).strip()
-        return None
-
-    def extract_array(varname: str) -> list[str]:
-        """Extract a bash array variable, handling multi-line forms.
-
-        Handles both single-line  varname=(a b c)
-        and multi-line            varname=(
-                                      a
-                                      b
-                                  )
-        Preserves the filename::url rename syntax used in source=().
-        """
-        match = re.search(
-            rf'^{varname}\s*=\s*\((.*?)\)',
-            content,
-            re.MULTILINE | re.DOTALL,
+    # Check if we're running as root
+    is_root = os.geteuid() == 0
+    
+    if is_root:
+        # Create a temporary non-root user for makepkg
+        temp_user = "aurbuilduser"
+        print(f"  [AUR] 🔧 Running as root, creating temporary user '{temp_user}'...")
+        
+        try:
+            # Create user if it doesn't exist
+            subprocess.run(
+                ["useradd", "-m", temp_user],
+                check=False,  # Don't fail if user exists
+                capture_output=True,
+            )
+            
+            # Ensure the user owns the repo directory
+            subprocess.run(
+                ["chown", "-R", temp_user, repo_path],
+                check=True,
+            )
+            
+            # Run makepkg as the temporary user
+            print(f"  [AUR] 🏃 Running makepkg as user '{temp_user}'...")
+            subprocess.run(
+                ["su", "-", temp_user, "-c", f"cd {repo_path} && makepkg --printsrcinfo > .SRCINFO"],
+                check=True,
+            )
+            
+        except subprocess.CalledProcessError as e:
+            print(f"  [AUR] ❌ Failed to generate .SRCINFO: {e}")
+            raise
+        finally:
+            # Clean up: change ownership back to root for subsequent operations
+            subprocess.run(
+                ["chown", "-R", "root:root", repo_path],
+                check=False,
+            )
+    else:
+        # Not root, can run makepkg directly
+        print(f"  [AUR] 🏃 Running makepkg...")
+        subprocess.run(
+            ["makepkg", "--printsrcinfo"],
+            cwd=repo_path,
+            check=True,
+            stdout=open(f"{repo_path}/.SRCINFO", "w"),
         )
-        if not match:
-            return []
-
-        raw = match.group(1)
-        # Tokenize: quoted strings first, then bare words
-        items = []
-        for token in re.findall(r'"[^"]*"|\'[^\']*\'|\S+', raw):
-            items.append(token.strip("\"'"))
-        return items
-
-    # ------------------------------------------------------------------ #
-    # Required fields
-    # ------------------------------------------------------------------ #
-    pkgname = extract_scalar("pkgname")
-    pkgver  = extract_scalar("pkgver")
-    pkgrel  = extract_scalar("pkgrel")
-
-    if not pkgname:
-        raise ValueError("Could not extract pkgname from PKGBUILD")
-    if not pkgver:
-        raise ValueError("Could not extract pkgver from PKGBUILD")
-    if not pkgrel:
-        raise ValueError("Could not extract pkgrel from PKGBUILD")
-
-    # ------------------------------------------------------------------ #
-    # Build .SRCINFO lines
-    # ------------------------------------------------------------------ #
-    lines: list[str] = []
-
-    def scalar_line(key: str, val: str | None) -> None:
-        if val:
-            lines.append(f"\t{key} = {val}")
-
-    def array_lines(key: str, vals: list[str]) -> None:
-        for v in vals:
-            lines.append(f"\t{key} = {v}")
-
-    lines.append(f"pkgbase = {pkgname}")
-
-    scalar_line("pkgdesc",      extract_scalar("pkgdesc"))
-    scalar_line("pkgver",       pkgver)
-    scalar_line("pkgrel",       pkgrel)
-    scalar_line("epoch",        extract_scalar("epoch"))
-    scalar_line("url",          extract_scalar("url"))
-
-    array_lines("arch",         extract_array("arch"))
-    array_lines("license",      extract_array("license"))
-    array_lines("depends",      extract_array("depends"))
-    array_lines("makedepends",  extract_array("makedepends"))
-    array_lines("checkdepends", extract_array("checkdepends"))
-    array_lines("optdepends",   extract_array("optdepends"))
-    array_lines("conflicts",    extract_array("conflicts"))
-    array_lines("provides",     extract_array("provides"))
-    array_lines("replaces",     extract_array("replaces"))
-    array_lines("noextract",    extract_array("noextract"))
-    array_lines("options",      extract_array("options"))
-    array_lines("source",       extract_array("source"))
-    array_lines("sha256sums",   extract_array("sha256sums"))
-    array_lines("sha512sums",   extract_array("sha512sums"))
-    array_lines("md5sums",      extract_array("md5sums"))
-    array_lines("sha1sums",     extract_array("sha1sums"))
-
-    # AUR's server-side hook requires a pkgname block at the end
-    lines.append("")
-    lines.append(f"pkgname = {pkgname}")
-    lines.append("")
-
-    with open(f"{repo_path}/.SRCINFO", "w") as f:
-        f.write("\n".join(lines))
 
     print(f"  [AUR] ✅ .SRCINFO generated successfully")
 
