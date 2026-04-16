@@ -141,7 +141,32 @@ def generate_srcinfo(repo_path: str) -> None:
         subprocess.CalledProcessError: If mksrcinfo fails.
     """
     print(f"  [AUR] 📝 Generating .SRCINFO...")
-    subprocess.check_call(["makepkg", "--printsrcinfo"], cwd=repo_path, stdout=open(f"{repo_path}/.SRCINFO", "w"))
+    try:
+        result = subprocess.run(
+            ["makepkg", "--printsrcinfo"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True
+        )
+
+        # Write stdout to .SRCINFO file
+        with open(f"{repo_path}/.SRCINFO", "w") as f:
+            f.write(result.stdout)
+
+        # Check if command failed
+        if result.returncode != 0:
+            print(f"  [AUR] ❌ makepkg failed with exit code {result.returncode}")
+            print(f"  [AUR] 🔎 STDERR output:")
+            for line in result.stderr.split('\n'):
+                print(f"         {line}")
+            print(f"  [AUR] 🔎 STDOUT output:")
+            for line in result.stdout.split('\n'):
+                print(f"         {line}")
+            raise subprocess.CalledProcessError(result.returncode, ["makepkg", "--printsrcinfo"])
+
+    except FileNotFoundError:
+        print(f"  [AUR] ❌ makepkg command not found - please install archlinux-keyring and pacman-contrib")
+        raise
 
 
 def commit_and_push(repo_path: str, msg: str) -> None:
