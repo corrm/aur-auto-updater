@@ -1,0 +1,163 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+
+  "type": "object",
+
+  "required": [
+    "pkgname",
+    "type",
+    "arch",
+    "pkgdesc",
+    "upstream",
+    "aur_repo",
+    "maintainer"
+  ],
+
+  "properties": {
+    "pkgname": {
+      "type": "string",
+      "description": "AUR package name used for PKGBUILD and repository naming."
+    },
+
+    "aur_repo": {
+      "type": "string",
+      "description": "AUR Git repository name (e.g., pkgname or pkgname-bin)."
+    },
+
+    "type": {
+      "type": "string",
+      "description": "Package backend type that determines build logic and required fields.",
+      "enum": ["appimage", "debian"]
+    },
+
+    "pkgdesc": {
+      "type": "string",
+      "description": "Short description shown in AUR metadata."
+    },
+
+    "arch": {
+      "type": "array",
+      "description": "Supported CPU architectures (e.g., x86_64, aarch64).",
+      "items": { "type": "string" }
+    },
+
+    "license": {
+      "type": "array",
+      "description": "License identifiers (SPDX or Arch conventions).",
+      "items": { "type": "string" }
+    },
+
+    "depends": {
+      "type": "array",
+      "description": "Runtime dependencies for the package.",
+      "items": { "type": "string" }
+    },
+
+    "makedepends": {
+      "type": "array",
+      "description": "Build-time dependencies required during PKGBUILD execution.",
+      "items": { "type": "string" }
+    },
+
+    "options": {
+      "type": "array",
+      "description": "AUR/PKGBUILD options flags (e.g., !strip, !debug).",
+      "items": { "type": "string" }
+    },
+
+    "maintainer": {
+      "type": "string",
+      "description": "Primary maintainer identity for tracking ownership in automation."
+    },
+
+    "upstream": {
+      "type": "object",
+      "description": "Upstream source definition used to fetch releases or artifacts.",
+
+      "required": ["provider"],
+
+      "properties": {
+        "provider": {
+          "type": "string",
+          "description": "Upstream provider type used for version resolution.",
+          "enum": ["github", "url"]
+        },
+
+        "repo": {
+          "type": "string",
+          "description": "Repository identifier (for GitHub provider: owner/repo)."
+        },
+
+        "url": {
+          "type": "string",
+          "description": "Direct URL used when provider is 'url'."
+        },
+
+        "asset_regex": {
+          "type": "string",
+          "description": "Regex used to match release assets from upstream distributions."
+        }
+      }
+    },
+
+    "appimage": {
+      "type": "object",
+      "description": "AppImage-specific packaging configuration.",
+
+      "properties": {
+        "appimage_name": {
+          "type": "string",
+          "description": "Filename template of the AppImage artifact. May include ${pkgver}."
+        },
+
+        "binary_name": {
+          "type": "string",
+          "description": "Executable name exposed in /usr/bin symlink wrapper."
+        },
+
+        "desktop": {
+          "type": "boolean",
+          "description": "Whether to install a .desktop file for desktop integration."
+        },
+
+        "icons": {
+          "type": "boolean",
+          "description": "Whether to install application icons."
+        }
+      }
+    },
+
+    "debian": {
+      "type": "object",
+      "description": "Debian package extraction and versioning configuration.",
+
+      "properties": {
+        "deb_version": {
+          "type": "string",
+          "description": "Upstream Debian package version selector (or override version strategy)."
+        },
+
+        "extract_method": {
+          "type": "string",
+          "description": "Extraction backend used for .deb unpacking.",
+          "enum": ["ar", "dpkg", "bsdtar"]
+        }
+      }
+    }
+  },
+
+  "oneOf": [
+    {
+      "properties": {
+        "type": { "const": "appimage" }
+      },
+      "required": ["appimage"]
+    },
+    {
+      "properties": {
+        "type": { "const": "debian" }
+      },
+      "required": ["debian"]
+    }
+  ]
+}

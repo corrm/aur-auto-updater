@@ -1,0 +1,24 @@
+maintainer: "Islam Nofl <islamnofl.official@gmail.com>"
+
+aur_repo: superset-bin
+pkgname: superset-bin
+pkgdesc: Code Editor for the AI Agents Era - Run an army of Claude Code, Codex, etc. on your machine
+url: https://superset.sh
+arch: [x86_64]
+license: [custom]
+
+depends:
+  - "fuse2"
+  - "hicolor-icon-theme"
+
+upstream:
+  provider: github
+  repo: superset-sh/superset
+  asset_regex: ".*AppImage$"
+
+type: appimage
+appimage:
+  appimage_name: "superset-${pkgver}-x86_64.AppImage"
+  binary_name: superset-desktop
+  desktop: true
+  icons: true

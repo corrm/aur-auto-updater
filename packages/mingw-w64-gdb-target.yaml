@@ -1,0 +1,20 @@
+maintainer: "Islam Nofl <islamnofl.official@gmail.com>"
+
+aur_repo: mingw-w64-gdb-target
+pkgname: mingw-w64-gdb-target
+pkgdesc: Cross-debugger server for Win32 and Win64 using MinGW-w64 extracted from Debian package
+url: https://packages.debian.org/sid/all/gdb-mingw-w64-target
+arch: [i686, x86_64]
+license: [GPL-3+]
+depends: []
+
+options:
+  - "!docs"
+
+upstream:
+  provider: url
+  url: http://ftp.debian.org/debian/pool/main/g/gdb-mingw-w64/
+
+type: debian
+debian:
+  deb_version: "16.1-1+13.2"

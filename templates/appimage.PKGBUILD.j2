@@ -1,0 +1,48 @@
+pkgname={{ pkgname }}
+pkgver={{ pkgver }}
+pkgrel=1
+pkgdesc="{{ pkgdesc }}"
+arch=({{ arch | join(' ') }})
+url="{{ url }}"
+license=({{ license | join(' ') }})
+
+depends=({{ depends | join(' ') }})
+options=(!strip !debug)
+
+noextract=("${_appimage}")
+
+_appimage="{{ appimage_name }}"
+
+source=("${_appimage}::{{ download_url }}")
+sha256sums=('{{ sha256 }}')
+
+prepare() {
+    chmod +x "${_appimage}"
+    ./"${_appimage}" --appimage-extract
+}
+
+package() {
+    install -Dm755 "${srcdir}/${_appimage}" \
+        "${pkgdir}/opt/${pkgname}/${_appimage}"
+
+    install -dm755 "${pkgdir}/usr/bin"
+    ln -s "/opt/${pkgname}/${_appimage}" "${pkgdir}/usr/bin/{{ binary_name }}"
+
+    cd "${srcdir}/squashfs-root"
+
+    {% if desktop %}
+    find . -maxdepth 1 -name '*.desktop' -exec \
+        install -Dm644 {} "${pkgdir}/usr/share/applications/{{ binary_name }}.desktop" \;
+
+    sed -i "s|Exec=.*|Exec={{ binary_name }} %U|" \
+        "${pkgdir}/usr/share/applications/{{ binary_name }}.desktop"
+    sed -i "s|Icon=.*|Icon={{ binary_name }}|" \
+        "${pkgdir}/usr/share/applications/{{ binary_name }}.desktop"
+    {% endif %}
+
+    {% if icons %}
+    if [ -d usr/share/icons ]; then
+        cp -r usr/share/icons "${pkgdir}/usr/share/"
+    fi
+    {% endif %}
+}
