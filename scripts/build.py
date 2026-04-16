@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -12,8 +13,8 @@ import yaml  # type: ignore[import-untyped]
 from jinja2 import Template  # type: ignore[import-untyped]
 
 from upstream import fetch
-from state import load_state, save_state
 from template import select_template
+from aur import exists as aur_exists
 
 
 def sha256(url: str) -> str:
@@ -73,17 +74,54 @@ def build(pkgfile: str) -> dict[str, str] | None:
     print(f"[{pkgname}] Package name: {pkgname}")
     print(f"[{pkgname}] Type: {cfg.get('type', 'unknown')}")
 
-    state_path = f"state/{pkgname}.json"
-    state = load_state(state_path, pkgname)
-
-    # Check if this is a new package (no previous state)
-    last_version = state.get("last_version")
-    is_new_package = last_version is None
-
-    if is_new_package:
-        print(f"[{pkgname}] ✨ NEW PACKAGE - Will be created")
+    # Check if package exists in AUR (not just local state)
+    print(f"[{pkgname}] 🔍 Checking AUR existence...")
+    in_aur = aur_exists(pkgname)
+    
+    # Handle SSH auth failure case (exists() returns None)
+    if in_aur is None:
+        print(f"[{pkgname}] ⚠️  Cannot verify AUR existence - SSH auth failed")
+        print(f"[{pkgname}] ℹ️  Ensure AUR_SSH_PRIVATE_KEY is set in GitHub secrets")
+        print(f"[{pkgname}] ⚠️  Will process package (safe mode: assumes update needed)")
+        in_aur = False  # Treat as not in AUR to allow processing
+    
+    # Determine if this is truly a new package
+    last_version = None
+    is_new_package = not in_aur
+    
+    if in_aur:
+        print(f"[{pkgname}] 📦 Package EXISTS in AUR")
+        # Fetch current version from AUR PKGBUILD to compare
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["git", "ls-remote", f"ssh://aur@aur.archlinux.org/{pkgname}.git"],
+                capture_output=True, text=True, timeout=15
+            )
+            if result.returncode == 0:
+                # Clone temporarily to read PKGBUILD
+                temp_repo = f"/tmp/aur-{pkgname}"
+                if os.path.exists(temp_repo):
+                    shutil.rmtree(temp_repo)
+                os.makedirs(temp_repo)
+                subprocess.check_call(
+                    ["git", "clone", "--depth", "1", f"ssh://aur@aur.archlinux.org/{pkgname}.git", temp_repo],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                )
+                pkgbuild_path = f"{temp_repo}/PKGBUILD"
+                if os.path.exists(pkgbuild_path):
+                    content = Path(pkgbuild_path).read_text()
+                    # Extract pkgver from PKGBUILD
+                    for line in content.split('\n'):
+                        if line.startswith('pkgver='):
+                            last_version = line.split('=', 1)[1].strip()
+                            break
+                    print(f"[{pkgname}] 📦 Current AUR version: {last_version}")
+                shutil.rmtree(temp_repo)
+        except Exception as e:
+            print(f"[{pkgname}] ⚠️  Could not fetch AUR version: {e}")
     else:
-        print(f"[{pkgname}] 📦 Last known version: {last_version}")
+        print(f"[{pkgname}] ✨ NEW PACKAGE - Will be created")
 
     try:
         tag, url, asset_id = fetch(cfg)
@@ -91,15 +129,15 @@ def build(pkgfile: str) -> dict[str, str] | None:
         print(f"[{pkgname}] 🌐 Fetched upstream version: {tag}")
         print(f"[{pkgname}] 🔗 Download URL: {url}")
 
-        # Compare versions - only skip if we have a previous version and it matches
+        # Compare versions - skip if version unchanged (only for existing packages)
         if not is_new_package and last_version == tag:
             print(f"[{pkgname}] ✅ UP TO DATE - No changes detected")
-            print(f"[{pkgname}] ℹ️  Skipping build (version {tag} already processed)")
-            state["last_success"] = True
-            state["last_error"] = None
-            save_state(state_path, state)
+            print(f"[{pkgname}] ℹ️  Skipping build (version {tag} already in AUR)")
             return None
-
+        
+        if not is_new_package:
+            print(f"[{pkgname}] 🔄 Version change detected: {last_version} → {tag}")
+        
         if is_new_package:
             print(f"[{pkgname}] 🆕 VERSION CHANGE: None → {tag} (NEW PACKAGE)")
         else:
@@ -141,16 +179,6 @@ def build(pkgfile: str) -> dict[str, str] | None:
         if len(rendered.split('\n')) > 10:
             print(f"         ... ({len(rendered.split(chr(10))) - 10} more lines)")
 
-        state.update({
-            "last_version": tag,
-            "last_asset_id": asset_id,
-            "last_success": True,
-            "last_error": None,
-            "retry_count": 0
-        })
-
-        save_state(state_path, state)
-
         # Determine status based on whether this is a new package or update
         status = "created" if is_new_package else "updated"
         status_emoji = "✨" if is_new_package else "🔄"
@@ -164,10 +192,7 @@ def build(pkgfile: str) -> dict[str, str] | None:
         print(f"[{pkgname}] 📋 Traceback:")
         for line in traceback.format_exc().split('\n'):
             print(f"         {line}")
-        state["last_success"] = False
-        state["last_error"] = str(e)
-        state["retry_count"] += 1
 
-        save_state(state_path, state)
+        return {"pkgname": pkgname, "error": str(e)}
 
         return {"pkgname": pkgname, "error": str(e)}
