@@ -15,7 +15,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pacman -Syu --noconfirm --needed git base-devel openssh python python-pip
+          pacman -Syu --noconfirm --needed sudo git base-devel openssh python python-pip
 
       - name: Configure Git
         run: |
@@ -32,13 +32,8 @@ jobs:
           # Also setup SSH for GitHub (for pushing state if needed)
           ssh-keyscan github.com >> ~/.ssh/known_hosts
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.14"
-
       - name: Install deps
-        run: pip install pyyaml requests jinja2
+        run: sudo pip install pyyaml requests jinja2
 
       - name: Restore state cache
         uses: actions/cache@v4
