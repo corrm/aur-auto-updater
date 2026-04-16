@@ -33,7 +33,7 @@ jobs:
           ssh-keyscan github.com >> ~/.ssh/known_hosts
 
       - name: Install deps
-        run: sudo pip install pyyaml requests jinja2
+        run: sudo pip install pyyaml requests jinja2 --break-system-packages
 
       - name: Restore state cache
         uses: actions/cache@v4
