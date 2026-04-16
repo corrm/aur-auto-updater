@@ -13,6 +13,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm --needed git base-devel sudo
+
       - name: Configure Git
         run: |
           git config --global user.name "Islam Nofl"
