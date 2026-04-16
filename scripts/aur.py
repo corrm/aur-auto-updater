@@ -47,10 +47,27 @@ def exists(pkgname: str) -> bool:
         # SSH authentication errors - this means the repo likely exists but we can't access
         # In CI, this shouldn't happen if SSH key is properly configured
         if "permission denied" in stderr_lower or "publickey" in stderr_lower or "host key verification failed" in stderr_lower:
-            print(f"  [AUR] ⚠️  SSH authentication failed - check AUR_SSH_PRIVATE_KEY secret")
-            print(f"  [AUR] ⚠️  Assuming package exists to avoid accidental creation")
-            # Return None to signal "unknown - needs auth"
-            return None
+            print(f"  [AUR] ❌ SSH authentication FAILED")
+            print(f"  [AUR] 🔎 Debug info:")
+            print(f"  [AUR]     URL: {url}")
+            print(f"  [AUR]     Return code: {result.returncode}")
+            print(f"  [AUR]     Stderr: {result.stderr.strip()}")
+            print(f"  [AUR]     Stdout: {result.stdout.strip() if result.stdout.strip() else '(empty)'}")
+
+            # Check for common SSH issues
+            if "permission denied (publickey)" in stderr_lower:
+                print(f"  [AUR] 💡 Possible causes:")
+                print(f"  [AUR]     - AUR_SSH_PRIVATE_KEY secret is missing or empty")
+                print(f"  [AUR]     - SSH key format is incorrect (should be ED25519 or RSA)")
+                print(f"  [AUR]     - SSH key permissions are wrong (should be 600)")
+                print(f"  [AUR]     - Key is not added to AUR account")
+            elif "host key verification failed" in stderr_lower:
+                print(f"  [AUR] 💡 Possible causes:")
+                print(f"  [AUR]     - known_hosts file is missing aur.archlinux.org")
+                print(f"  [AUR]     - SSH strict host key checking is enabled")
+
+            # Fast fail - raise exception instead of returning None
+            raise PermissionError(f"SSH authentication failed for {url}: {result.stderr.strip()}")
 
         # Other errors - assume doesn't exist
         print(f"  [AUR] ⚠️  Git check failed: {result.stderr.strip()}")
@@ -163,14 +180,8 @@ def publish(pkgname: str, build_dir: str = "build") -> dict[str, str]:
 
     try:
         # Check if package exists in AUR
+        # Note: exists() now raises PermissionError on SSH auth failure (fast fail)
         in_aur = exists(pkgname)
-
-        # Handle SSH auth failure case (exists() returns None)
-        if in_aur is None:
-            print(f"[{pkgname}] ⚠️  Cannot verify AUR existence - SSH auth failed")
-            print(f"[{pkgname}] ℹ️  Ensure AUR_SSH_PRIVATE_KEY is set in GitHub secrets")
-            print(f"[{pkgname}] ℹ️  PKGBUILD generated at: {build_dir}/{pkgname}/PKGBUILD")
-            return {"pkgname": pkgname, "error": "SSH authentication failed - cannot verify AUR package"}
 
         if in_aur:
             print(f"[{pkgname}] 📦 Package exists in AUR - will update")
