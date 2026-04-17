@@ -156,15 +156,27 @@ def generate_srcinfo(repo_path: str) -> None:
     # Set ALLOW_ROOT=1 for makepkg when running as root (e.g., in CI)
     env = os.environ.copy()
     env["ALLOW_ROOT"] = "1"
+    env["BYPASS_SAFETY_CHECKS"] = "1"
 
-    print(f"  [AUR] 🏃 Running makepkg (ALLOW_ROOT=1)...")
-    subprocess.run(
-        ["makepkg", "--printsrcinfo"],
+    print(f"  [AUR] 🏃 Running makepkg (ALLOW_ROOT=1, BYPASS_SAFETY_CHECKS=1)...")
+    result = subprocess.run(
+        ["makepkg", "--printsrcinfo", "--allowroot"],
         cwd=repo_path,
-        check=True,
+        check=False,
         env=env,
         stdout=open(f"{repo_path}/.SRCINFO", "w"),
+        stderr=subprocess.PIPE,
+        text=True,
     )
+
+    if result.returncode != 0:
+        stderr_output = result.stderr.strip()
+        if "Running makepkg as root is not allowed" in stderr_output:
+            raise RuntimeError(
+                f"makepkg refused to run as root despite ALLOW_ROOT=1. "
+                f"This should not happen in CI. Stderr: {stderr_output}"
+            )
+        raise subprocess.CalledProcessError(result.returncode, "makepkg", output=result.stderr)
 
     print(f"  [AUR] ✅ .SRCINFO generated successfully")
 
