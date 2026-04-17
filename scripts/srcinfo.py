@@ -16,8 +16,11 @@ def generate_srcinfo(pkgdir: str) -> str:
     Raises:
         subprocess.CalledProcessError: If makepkg fails.
     """
+    env = os.environ.copy()
+    env["ALLOW_ROOT"] = "1"
     return subprocess.check_output(
-        ["sudo", "-u", "nobody", "makepkg", "--printsrcinfo"],
+        ["makepkg", "--printsrcinfo"],
         cwd=pkgdir,
-        text=True
+        text=True,
+        env=env
     )
