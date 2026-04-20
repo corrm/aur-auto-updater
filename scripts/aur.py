@@ -160,7 +160,7 @@ def generate_srcinfo(repo_path: str) -> None:
 
     print(f"  [AUR] 🏃 Running makepkg (ALLOW_ROOT=1, BYPASS_SAFETY_CHECKS=1)...")
     result = subprocess.run(
-        ["makepkg", "--printsrcinfo", "--allowroot"],
+        ["makepkg", "--printsrcinfo"],
         cwd=repo_path,
         check=False,
         env=env,
