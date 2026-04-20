@@ -1,7 +1,5 @@
 # Maintainer: {{ maintainer }}
 
-_debver="{{ deb_version }}"
-
 pkgname={{ pkgname }}
 pkgver={{ pkgver }}
 pkgrel=1
@@ -13,6 +11,10 @@ license=({{ license | join(' ') }})
 depends=({{ depends | join(' ') }})
 makedepends=({{ makedepends | join(' ') }})
 options=({{ options | join(' ') }})
+
+{% if conflicts %}
+conflicts=({{ conflicts | join(' ') }})
+{% endif %}
 
 source=("{{ download_url }}")
 sha256sums=('{{ sha256 }}')
