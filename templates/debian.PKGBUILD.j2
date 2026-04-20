@@ -1,3 +1,7 @@
+# Maintainer: {{ maintainer }}
+
+_debver="{{ deb_version }}"
+
 pkgname={{ pkgname }}
 pkgver={{ pkgver }}
 pkgrel=1
@@ -10,63 +14,27 @@ depends=({{ depends | join(' ') }})
 makedepends=({{ makedepends | join(' ') }})
 options=({{ options | join(' ') }})
 
-_debver="{{ deb_version }}"
-
-source=("${pkgname}-${_debver}.deb::{{ download_url }}")
+source=("{{ download_url }}")
 sha256sums=('{{ sha256 }}')
 
-{% set extract_method = debian_config.get('extract_method', 'ar') %}
 prepare() {
-{% if extract_method == 'ar' %}
-    command -v ar >/dev/null 2>&1 || exit 1
-    command -v tar >/dev/null 2>&1 || exit 1
+    command -v ar >/dev/null 2>&1 || { echo "Error: 'ar' is required but not found."; exit 1; }
+    command -v tar >/dev/null 2>&1 || { echo "Error: 'tar' is required but not found."; exit 1; }
 
-    mkdir -p "${srcdir}/deb"
-    cd "${srcdir}/deb"
-
-    ar x "../${pkgname}-${_debver}.deb"
-{% elif extract_method == 'dpkg' %}
-    command -v dpkg >/dev/null 2>&1 || exit 1
-    command -v ar >/dev/null 2>&1 || exit 1
-
-    mkdir -p "${srcdir}/deb"
-    cd "${srcdir}/deb"
-
-    ar x "../${pkgname}-${_debver}.deb"
-{% elif extract_method == 'bsdtar' %}
-    command -v bsdtar >/dev/null 2>&1 || exit 1
-
-    mkdir -p "${srcdir}/deb"
-    cd "${srcdir}/deb"
-
-    bsdtar -xf "../${pkgname}-${_debver}.deb"
-{% endif %}
+    mkdir -p "${srcdir}/deb_contents"
+    cd "${srcdir}/deb_contents"
+    ar x "../$(basename '{{ download_url }}')"
 }
 
 package() {
-    cd "${srcdir}/deb"
+    cd "${srcdir}/deb_contents"
 
-{% if extract_method == 'ar' %}
     if [[ ! -f data.tar.* ]]; then
-        echo "Missing data.tar"
+        echo "Error: data.tar.* not found in the Debian package."
         exit 1
     fi
 
     tar -xf data.tar.* -C "${pkgdir}"
-{% elif extract_method == 'dpkg' %}
-    if [[ ! -f data.tar.* ]]; then
-        echo "Missing data.tar"
-        exit 1
-    fi
 
-    mkdir -p "${pkgdir}"
-    dpkg -x data.tar.* "${pkgdir}"
-{% elif extract_method == 'bsdtar' %}
-    if [[ ! -d data ]]; then
-        echo "Missing data directory"
-        exit 1
-    fi
-
-    cp -r data/* "${pkgdir}/"
-{% endif %}
+    echo "Files extracted successfully."
 }

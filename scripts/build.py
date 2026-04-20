@@ -124,6 +124,7 @@ def build(pkgfile: str) -> dict[str, str] | None:
 
         # Pass debian config if available
         debian_config = cfg.get("debian", {})
+        deb_version = debian_config.get("deb_version", "")
 
         print(f"[{pkgname}] 🎨 Rendering PKGBUILD template...")
         rendered = tmpl.render(
@@ -131,7 +132,8 @@ def build(pkgfile: str) -> dict[str, str] | None:
             pkgver=pkgver,
             download_url=url,
             sha256=checksum,
-            debian_config=debian_config
+            debian_config=debian_config,
+            deb_version=deb_version
         )
 
         outdir = f"build/{pkgname}"
