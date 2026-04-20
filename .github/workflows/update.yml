@@ -42,9 +42,7 @@ jobs:
           chmod 600 /root/.ssh/config
 
       - name: Install deps
-        run: |
-          sudo pip install pyyaml requests jinja2 --break-system-packages
-          echo "ALLOW_ROOT=1" | sudo tee -a /etc/makepkg.conf
+        run: sudo pip install pyyaml requests jinja2 --break-system-packages
 
       - name: Restore state cache
         uses: actions/cache@v4

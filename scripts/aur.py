@@ -147,37 +147,84 @@ def generate_srcinfo(repo_path: str) -> None:
         FileNotFoundError: If PKGBUILD does not exist.
         subprocess.CalledProcessError: If makepkg fails.
     """
-    print(f"  [AUR] 📝 Generating .SRCINFO using makepkg...")
+    print(f"  [AUR] 📝 Generating .SRCINFO...")
 
     pkgbuild_path = f"{repo_path}/PKGBUILD"
     if not os.path.exists(pkgbuild_path):
         raise FileNotFoundError(f"PKGBUILD not found at {pkgbuild_path}")
 
-    env = os.environ.copy()
-    env["ALLOW_ROOT"] = "1"
+    srcinfo = generate_srcinfo_from_pkgbuild(pkgbuild_path)
 
-    print(f"  [AUR] 🏃 Running makepkg (ALLOW_ROOT=1)...")
-    result = subprocess.run(
-        ["makepkg", "--printsrcinfo"],
-        cwd=repo_path,
-        check=False,
-        env=env,
-        stdout=open(f"{repo_path}/.SRCINFO", "w"),
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-
-    if result.returncode != 0:
-        stderr_output = result.stderr.strip()
-        print(f"  [AUR] ⚠️  makepkg stderr: {stderr_output}")
-        if "Running makepkg as root is not allowed" in stderr_output:
-            raise RuntimeError(
-                f"makepkg refused to run as root despite ALLOW_ROOT=1. "
-                f"This should not happen in CI. Stderr: {stderr_output}"
-            )
-        raise subprocess.CalledProcessError(result.returncode, "makepkg", output=result.stderr)
+    with open(f"{repo_path}/.SRCINFO", "w") as f:
+        f.write(srcinfo)
 
     print(f"  [AUR] ✅ .SRCINFO generated successfully")
+
+
+def generate_srcinfo_from_pkgbuild(pkgbuild_path: str) -> str:
+    """Generate .SRCINFO from PKGBUILD by parsing it directly."""
+    import re
+
+    with open(pkgbuild_path, "r") as f:
+        content = f.read()
+
+    lines = content.split("\n")
+    pkgname = pkgver = pkgrel = pkgdesc = arch = url = ""
+    license_arr = []
+    depends = []
+    makedepends = []
+    source = []
+    sha256sums = []
+    noextract = []
+    options = []
+
+    for line in lines:
+        line = line.strip()
+        if line.startswith("pkgname="):
+            pkgname = line.split("=", 1)[1].strip().strip('"')
+        elif line.startswith("pkgver="):
+            pkgver = line.split("=", 1)[1].strip().strip('"')
+        elif line.startswith("pkgrel="):
+            pkgrel = line.split("=", 1)[1].strip().strip('"')
+        elif line.startswith("pkgdesc="):
+            pkgdesc = line.split("=", 1)[1].strip().strip('"')
+        elif line.startswith("arch="):
+            arch = line.split("=", 1)[1].strip().strip("()")
+        elif line.startswith("url="):
+            url = line.split("=", 1)[1].strip().strip('"')
+        elif line.startswith("license="):
+            license_arr = [x.strip() for x in line.split("=", 1)[1].strip("()").split()]
+        elif line.startswith("depends="):
+            depends = [x.strip() for x in line.split("=", 1)[1].strip("()").split()]
+        elif line.startswith("makedepends="):
+            makedepends = [x.strip() for x in line.split("=", 1)[1].strip("()").split()]
+        elif line.startswith("source="):
+            source = [x.strip() for x in line.split("=", 1)[1].strip("()").split()]
+        elif line.startswith("sha256sums="):
+            sha256sums = [x.strip().strip("'\"") for x in line.split("=", 1)[1].strip("()").split()]
+        elif line.startswith("noextract="):
+            noextract = [x.strip() for x in line.split("=", 1)[1].strip("()").split()]
+        elif line.startswith("options="):
+            options = [x.strip() for x in line.split("=", 1)[1].strip("()").split()]
+
+    srcinfo_lines = ["pkgbase = " + pkgname, "pkgname = " + pkgname, "pkgver = " + pkgver,
+                     "pkgrel = " + pkgrel, "pkgdesc = " + pkgdesc, "arch = " + arch,
+                     "url = " + url, "license = " + " ".join(license_arr)]
+
+    for dep in depends:
+        srcinfo_lines.append("depends = " + dep)
+    for mdep in makedepends:
+        srcinfo_lines.append("makedepends = " + mdep)
+    for src in source:
+        srcinfo_lines.append("source = " + src)
+    for sha in sha256sums:
+        srcinfo_lines.append("sha256sums = " + sha)
+    for nex in noextract:
+        srcinfo_lines.append("noextract = " + nex)
+    for opt in options:
+        srcinfo_lines.append("options = " + opt)
+
+    return "\n".join(srcinfo_lines) + "\n"
 
 
 def commit_and_push(repo_path: str, msg: str) -> None:
