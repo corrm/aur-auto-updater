@@ -177,6 +177,7 @@ BYPASS_SAFETY_CHECKS=1
 
     if result.returncode != 0:
         stderr_output = result.stderr.strip()
+        print(f"  [AUR] ⚠️  makepkg stderr: {stderr_output}")
         if "Running makepkg as root is not allowed" in stderr_output:
             raise RuntimeError(
                 f"makepkg refused to run as root despite ALLOW_ROOT=1. "
