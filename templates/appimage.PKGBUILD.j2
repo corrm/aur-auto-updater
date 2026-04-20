@@ -9,7 +9,17 @@ url="{{ url }}"
 license=({{ license | join(' ') }})
 
 depends=({{ depends | join(' ') }})
+makedepends=({{ makedepends | join(' ') }})
+
+{% if options %}
+options=({{ options | join(' ') }})
+{% else %}
 options=(!strip !debug)
+{% endif %}
+
+{% if conflicts %}
+conflicts=({{ conflicts | join(' ') }})
+{% endif %}
 
 _appimage="{{ appimage_name }}"
 source=("${_appimage}::{{ download_url }}")
