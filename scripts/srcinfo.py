@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Generate .SRCINFO files for AUR packages."""
 
+import os
 import subprocess
 
 
