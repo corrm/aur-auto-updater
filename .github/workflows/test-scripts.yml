@@ -26,7 +26,7 @@ jobs:
 
       - name: Install Python and dependencies
         run: |
-          pacman -Syu --noconfirm --needed python python-pip python-pytest python-yaml python-requests python-jsonschema python-jinja2
+          pacman -Syu --noconfirm --needed python python-pip python-pytest python-yaml python-requests python-jsonschema python-jinja
 
       - name: Run tests
         run: |
