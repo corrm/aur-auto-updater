@@ -158,6 +158,10 @@ def generate_srcinfo(repo_path: str) -> None:
         f.write("""# Allow makepkg to run as root (required for CI)
 ALLOW_ROOT=1
 BYPASS_SAFETY_CHECKS=1
+
+# Default compression options
+SRCEXT=.src.tar.gz
+PKGEXT=.pkg.tar.gz
 """)
 
     env = os.environ.copy()
