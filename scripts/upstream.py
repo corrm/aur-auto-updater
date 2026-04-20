@@ -27,9 +27,10 @@ def github_latest(repo: str, asset_regex: str) -> tuple[str | None, str, int | N
     r.raise_for_status()
 
     data = r.json()
-    tag = data["tag_name"].lstrip("v")
+    raw_tag = data["tag_name"]
+    tag = re.sub(r'^[a-zA-Z_-]*v?', '', raw_tag).lstrip('-')
 
-    print(f"  [GitHub] 🏷️  Found tag: {tag}")
+    print(f"  [GitHub] 🏷️  Found tag: {tag} (from {raw_tag})")
 
     for a in data["assets"]:
         if re.match(asset_regex, a["name"]):
