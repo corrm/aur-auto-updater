@@ -9,7 +9,14 @@ url="{{ url }}"
 license=({{ license | join(' ') }})
 
 depends=({{ depends | join(' ') }})
+
+{% set method = extract_method | default('ar') %}
+{% if method == 'dpkg' %}
+makedepends=({{ makedepends | join(' ') }} dpkg)
+{% else %}
 makedepends=({{ makedepends | join(' ') }})
+{% endif %}
+
 options=({{ options | join(' ') }})
 
 {% if conflicts %}
@@ -19,7 +26,6 @@ conflicts=({{ conflicts | join(' ') }})
 source=("{{ download_url }}")
 sha256sums=('{{ sha256 }}')
 
-{% set method = extract_method | default('ar') %}
 _debfile="$(basename '{{ download_url }}')"
 
 prepare() {
