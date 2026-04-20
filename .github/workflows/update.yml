@@ -27,6 +27,8 @@ jobs:
         run: |
           git config --global user.name "Islam Nofl"
           git config --global user.email "islamnofl.official@gmail.com"
+          sudo -u builder git config --global user.name "Islam Nofl"
+          sudo -u builder git config --global user.email "islamnofl.official@gmail.com"
 
       - name: Setup SSH for AUR
         run: |
