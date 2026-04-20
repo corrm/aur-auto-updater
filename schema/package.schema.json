@@ -65,6 +65,12 @@
       "items": { "type": "string" }
     },
 
+    "conflicts": {
+      "type": "array",
+      "description": "Package names that this package conflicts with.",
+      "items": { "type": "string" }
+    },
+
     "maintainer": {
       "type": "string",
       "description": "Primary maintainer identity for tracking ownership in automation."
