@@ -48,7 +48,11 @@ jobs:
       - name: Install deps
         run: |
           sudo pip install pyyaml requests jinja2 --break-system-packages
+
+      - name: Fix permissions
+        run: |
           sudo chown -R builder:builder /__w/aur-auto-updater/aur-auto-updater
+          sudo chmod -R u+rw /__w/aur-auto-updater/aur-auto-updater
 
       - name: Restore state cache
         uses: actions/cache@v4
@@ -57,6 +61,9 @@ jobs:
           key: ${{ runner.os }}-aur-state-${{ hashFiles('packages/*.yaml') }}
           restore-keys: |
             ${{ runner.os }}-aur-state-
+
+      - name: Fix permissions
+        run: sudo chown -R builder:builder /__w/aur-auto-updater/aur-auto-updater
 
       - name: Run sync
         run: sudo -u builder python scripts/run_all.py
