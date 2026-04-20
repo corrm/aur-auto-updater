@@ -166,6 +166,14 @@ def commit_and_push(repo_path: str, msg: str) -> None:
     print(f"  [AUR] 📦 Adding files...")
     subprocess.check_call(["git", "add", "."], cwd=repo_path)
 
+    # Debug: check what files are staged
+    result = subprocess.run(["git", "status", "--porcelain"], cwd=repo_path, capture_output=True, text=True)
+    print(f"  [AUR] 📋 Staged files:\n{result.stdout}")
+    
+    if not result.stdout.strip():
+        print(f"  [AUR] ⚠️  No files to commit!")
+        return
+
     print(f"  [AUR] ✍️  Committing: {msg}")
     subprocess.check_call(["git", "commit", "-m", msg], cwd=repo_path)
 
