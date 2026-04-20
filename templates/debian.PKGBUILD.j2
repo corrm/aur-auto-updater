@@ -19,13 +19,23 @@ conflicts=({{ conflicts | join(' ') }})
 source=("{{ download_url }}")
 sha256sums=('{{ sha256 }}')
 
-prepare() {
-    command -v ar >/dev/null 2>&1 || { echo "Error: 'ar' is required but not found."; exit 1; }
-    command -v tar >/dev/null 2>&1 || { echo "Error: 'tar' is required but not found."; exit 1; }
+{% set method = extract_method | default('ar') %}
+_debfile="$(basename '{{ download_url }}')"
 
+prepare() {
     mkdir -p "${srcdir}/deb_contents"
     cd "${srcdir}/deb_contents"
-    ar x "../$(basename '{{ download_url }}')"
+
+    {% if method == 'ar' %}
+    command -v ar >/dev/null 2>&1 || { echo "Error: 'ar' is required but not found."; exit 1; }
+    ar x "../${_debfile}"
+    {% elif method == 'dpkg' %}
+    command -v dpkg-deb >/dev/null 2>&1 || { echo "Error: 'dpkg-deb' is required but not found."; exit 1; }
+    dpkg-deb -x "../${_debfile}" .
+    {% elif method == 'bsdtar' %}
+    command -v bsdtar >/dev/null 2>&1 || { echo "Error: 'bsdtar' is required but not found."; exit 1; }
+    bsdtar -xf "../${_debfile}"
+    {% endif %}
 }
 
 package() {

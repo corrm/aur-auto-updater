@@ -168,10 +168,7 @@
         "type": {
           "const": "debian"
         }
-      },
-      "required": [
-        "debian"
-      ]
+      }
     }
   ]
 }

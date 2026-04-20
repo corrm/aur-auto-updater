@@ -129,6 +129,7 @@ def build(pkgfile: str) -> dict[str, str] | None:
         # Pass debian config if available
         debian_config = cfg.get("debian", {})
         deb_version = debian_config.get("deb_version", "")
+        extract_method = debian_config.get("extract_method", "ar")
 
         # Pass appimage config fields individually
         appimage_config = cfg.get("appimage", {})
@@ -141,6 +142,7 @@ def build(pkgfile: str) -> dict[str, str] | None:
             sha256=checksum,
             debian_config=debian_config,
             deb_version=deb_version,
+            extract_method=extract_method,
             appimage_name=appimage_config.get("appimage_name", ""),
             binary_name=appimage_config.get("binary_name", ""),
             desktop=appimage_config.get("desktop", False),
