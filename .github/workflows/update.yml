@@ -1,4 +1,4 @@
-name: aur-autosync
+name: AUR Autosync
 
 on:
   schedule:
@@ -57,7 +57,7 @@ jobs:
           sudo chmod -R u+rw /__w/aur-auto-updater/aur-auto-updater
 
       - name: Restore state cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: state
           key: ${{ runner.os }}-aur-state-${{ hashFiles('packages/*.yaml') }}
@@ -71,7 +71,7 @@ jobs:
         run: sudo -u builder python scripts/run_all.py
 
       - name: Save state cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: state
           key: ${{ runner.os }}-aur-state-${{ hashFiles('packages/*.yaml') }}-${{ github.run_id }}
