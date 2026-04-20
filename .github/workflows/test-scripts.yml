@@ -35,9 +35,3 @@ jobs:
       - name: Validate Python syntax
         run: |
           python -m py_compile scripts/*.py
-
-      - name: Type check with mypy
-        run: |
-          pip install mypy
-          mypy scripts/ || true
-          echo "Note: mypy type checking is informational only"
