@@ -130,6 +130,9 @@ def build(pkgfile: str) -> dict[str, str] | None:
         debian_config = cfg.get("debian", {})
         deb_version = debian_config.get("deb_version", "")
 
+        # Pass appimage config fields individually
+        appimage_config = cfg.get("appimage", {})
+
         print(f"[{pkgname}] 🎨 Rendering PKGBUILD template...")
         rendered = tmpl.render(
             **cfg,
@@ -137,7 +140,11 @@ def build(pkgfile: str) -> dict[str, str] | None:
             download_url=url,
             sha256=checksum,
             debian_config=debian_config,
-            deb_version=deb_version
+            deb_version=deb_version,
+            appimage_name=appimage_config.get("appimage_name", ""),
+            binary_name=appimage_config.get("binary_name", ""),
+            desktop=appimage_config.get("desktop", False),
+            icons=appimage_config.get("icons", False)
         )
 
         outdir = f"build/{pkgname}"
