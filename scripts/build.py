@@ -122,9 +122,9 @@ def build(pkgfile: str) -> dict[str, str] | None:
 
         pkgver = tag or "0"
         
-        # Convert debian version to valid pkgver (replace hyphens with dots)
-        if cfg.get("type") == "debian":
-            pkgver = pkgver.replace("-", ".")
+        # Convert version to valid pkgver (replace hyphens with dots)
+        # Arch pkgver cannot contain hyphens, colons, forward slashes, or whitespace
+        pkgver = pkgver.replace("-", ".").replace(":", ".")
 
         # Pass debian config if available
         debian_config = cfg.get("debian", {})
