@@ -149,25 +149,8 @@ def generate_srcinfo(repo_path: str) -> None:
     """
     print(f"  [AUR] 📝 Generating .SRCINFO using makepkg...")
 
-    pkgbuild_path = f"{repo_path}/PKGBUILD"
-    if not os.path.exists(pkgbuild_path):
-        raise FileNotFoundError(f"PKGBUILD not found at {pkgbuild_path}")
-
-    print(f"  [AUR] 🏃 Running makepkg --printsrcinfo...")
-    result = subprocess.run(
-        ["makepkg", "--printsrcinfo"],
-        cwd=repo_path,
-        check=False,
-        stdout=open(f"{repo_path}/.SRCINFO", "w"),
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-
-    if result.returncode != 0:
-        print(f"  [AUR] ⚠️  makepkg stderr: {result.stderr}")
-        raise subprocess.CalledProcessError(result.returncode, "makepkg", output=result.stderr)
-
-    print(f"  [AUR] ✅ .SRCINFO generated successfully")
+    from makepkg_wrapper import generate_srcinfo as _generate_srcinfo
+    _generate_srcinfo(repo_path)
 
 
 def commit_and_push(repo_path: str, msg: str) -> None:

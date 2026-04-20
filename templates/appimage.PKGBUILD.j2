@@ -11,9 +11,8 @@ license=({{ license | join(' ') }})
 depends=({{ depends | join(' ') }})
 options=(!strip !debug)
 
-noextract=("${_appimage}")
-
 _appimage="{{ appimage_name }}"
+noextract=("${_appimage}")
 
 source=("${_appimage}::{{ download_url }}")
 sha256sums=('{{ sha256 }}')

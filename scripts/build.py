@@ -121,6 +121,10 @@ def build(pkgfile: str) -> dict[str, str] | None:
         tmpl = Template(Path(tmpl_path).read_text())
 
         pkgver = tag or "0"
+        
+        # Convert debian version to valid pkgver (replace hyphens with dots)
+        if cfg.get("type") == "debian":
+            pkgver = pkgver.replace("-", ".")
 
         # Pass debian config if available
         debian_config = cfg.get("debian", {})
