@@ -175,7 +175,10 @@ def commit_and_push(repo_path: str, msg: str) -> None:
         return
 
     print(f"  [AUR] ✍️  Committing: {msg}")
-    subprocess.check_call(["git", "commit", "-m", msg], cwd=repo_path)
+    result = subprocess.run(["git", "commit", "-m", msg], cwd=repo_path, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"  [AUR] ❌ Git commit failed: {result.stderr}")
+        raise subprocess.CalledProcessError(result.returncode, "git commit", output=result.stderr)
 
     print(f"  [AUR] 🚀 Pushing to AUR...")
     subprocess.check_call(["git", "push"], cwd=repo_path)
