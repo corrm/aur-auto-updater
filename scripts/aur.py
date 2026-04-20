@@ -153,8 +153,8 @@ def generate_srcinfo(repo_path: str) -> None:
     if not os.path.exists(pkgbuild_path):
         raise FileNotFoundError(f"PKGBUILD not found at {pkgbuild_path}")
 
-    makepkg_conf = f"""{repo_path}/makepkg.conf"""
-    with open(makepkg_conf, "w") as f:
+    makepkg_conf = "makepkg.conf"
+    with open(f"{repo_path}/{makepkg_conf}", "w") as f:
         f.write("""# Allow makepkg to run as root (required for CI)
 ALLOW_ROOT=1
 BYPASS_SAFETY_CHECKS=1
