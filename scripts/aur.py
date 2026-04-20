@@ -164,6 +164,7 @@ def generate_srcinfo(repo_path: str) -> None:
     )
 
     if result.returncode != 0:
+        print(f"  [AUR] ⚠️  makepkg stderr: {result.stderr}")
         raise subprocess.CalledProcessError(result.returncode, "makepkg", output=result.stderr)
 
     print(f"  [AUR] ✅ .SRCINFO generated successfully")
