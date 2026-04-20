@@ -1,0 +1,46 @@
+name: Run Tests
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/**'
+      - 'tests/**'
+      - '.github/workflows/test-scripts.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'scripts/**'
+      - 'tests/**'
+      - '.github/workflows/test-scripts.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Python and dependencies
+        run: |
+          pacman -Syu --noconfirm --needed python python-pip python-pytest pyyaml
+
+      - name: Install Python packages
+        run: |
+          pip install jinja2 pyyaml requests jsonschema
+
+      - name: Run tests
+        run: |
+          python -m pytest tests/ -v
+
+      - name: Validate Python syntax
+        run: |
+          python -m py_compile scripts/*.py
+
+      - name: Type check with mypy
+        run: |
+          pip install mypy
+          mypy scripts/ || true
+          echo "Note: mypy type checking is informational only"
