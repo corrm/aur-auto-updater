@@ -1,5 +1,3 @@
-maintainer: "Islam Nofl <islamnofl.official@gmail.com>"
-
 aur_repo: mingw-w64-gdb-target
 pkgname: mingw-w64-gdb-target
 pkgdesc: Cross-debugger server for Win32 and Win64 using MinGW-w64 extracted from Debian package

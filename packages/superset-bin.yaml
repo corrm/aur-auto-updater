@@ -1,5 +1,3 @@
-maintainer: "Islam Nofl <islamnofl.official@gmail.com>"
-
 aur_repo: superset-bin
 pkgname: superset-bin
 pkgdesc: Code Editor for the AI Agents Era - Run an army of Claude Code, Codex, etc. on your machine

@@ -29,7 +29,7 @@ jobs:
 
       - name: Install Python and dependencies
         run: |
-          uv pip install pytest pyyaml requests jsonschema jinja2
+          uv pip install --system pytest pyyaml requests jsonschema jinja2
 
       - name: Run tests
         run: |

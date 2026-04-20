@@ -7,8 +7,7 @@
     "arch",
     "pkgdesc",
     "upstream",
-    "aur_repo",
-    "maintainer"
+    "aur_repo"
   ],
   "properties": {
     "pkgname": {
@@ -76,10 +75,6 @@
       "items": {
         "type": "string"
       }
-    },
-    "maintainer": {
-      "type": "string",
-      "description": "Primary maintainer identity for tracking ownership in automation."
     },
     "upstream": {
       "type": "object",

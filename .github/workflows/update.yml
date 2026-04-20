@@ -18,6 +18,13 @@ jobs:
         run: |
           pacman -Syu --noconfirm --needed sudo git base-devel openssh python python-pip
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install Python deps
+        run: |
+          uv pip install --system pyyaml requests jinja2
+
       - name: Create builder user
         run: |
           useradd -m builder
@@ -46,10 +53,6 @@ jobs:
           EOF
           chmod 600 /home/builder/.ssh/config
           chown -R builder:builder /home/builder/.ssh/config
-
-      - name: Install deps
-        run: |
-          sudo pip install pyyaml requests jinja2 --break-system-packages
 
       - name: Fix permissions
         run: |
