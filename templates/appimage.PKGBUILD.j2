@@ -66,4 +66,9 @@ package() {
         fi
     done
 {%- endif %}
+{%- if install_files %}
+{%- for file in install_files %}
+    install -Dm{{ file.mode }} "{{ file.source }}" "${pkgdir}{{ file.dest }}"
+{%- endfor %}
+{%- endif %}
 }
