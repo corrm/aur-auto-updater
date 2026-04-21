@@ -20,12 +20,12 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
+        with:
+          enable-default-python: true
 
-      - name: Create venv and install deps
+      - name: Install Python deps
         run: |
-          uv venv
-          source .venv/bin/activate
-          uv pip install pyyaml requests jinja2
+          uv pip install --system --break-system-packages pyyaml requests jinja2
 
       - name: Create builder user
         run: |
@@ -73,9 +73,7 @@ jobs:
         run: sudo chown -R builder:builder /__w/aur-auto-updater/aur-auto-updater
 
       - name: Run sync
-        run: |
-          source .venv/bin/activate
-          sudo -u builder python scripts/run_all.py
+        run: sudo -u builder python scripts/run_all.py
 
       - name: Save state cache
         uses: actions/cache@v5
