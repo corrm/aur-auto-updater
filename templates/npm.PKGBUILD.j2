@@ -9,10 +9,10 @@ license=({{ license | join(' ') }})
 {% set pm = package_manager | default('npm') %}
 {% if pm == 'bun' %}
 {% set builtin_deps = ['bun'] %}
-makedepends=({{ makedepends | join(' ') }} bun)
+makedepends=({{ makedepends | join(' ') }} bun jq)
 {% else %}
 {% set builtin_deps = ['nodejs', 'npm'] %}
-makedepends=({{ makedepends | join(' ') }})
+makedepends=({{ makedepends | join(' ') }} jq)
 {% endif %}
 
 {% set user_deps = depends or [] %}{% set all_depends = (user_deps + builtin_deps) | unique %}
