@@ -2,7 +2,7 @@ aur_repo: gsd-pi
 pkgname: gsd-pi
 pkgdesc: A powerful meta-prompting, context engineering and spec-driven development system that enables agents to work autonomously
 url: https://github.com/gsd-build/gsd-2
-arch: [any]
+arch: [x86_64]
 license: [MIT]
 depends: []
 
