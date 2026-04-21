@@ -4,12 +4,11 @@ pkgdesc: A powerful meta-prompting, context engineering and spec-driven developm
 url: https://github.com/gsd-build/gsd-2
 arch: [any]
 license: [MIT]
-depends:
-  - nodejs
+depends: []
 
 upstream:
   provider: npm
-  npm_name: gsd-pi
+  npm_name: @gsd-build/engine-linux-x64-gnu
 
 type: npm
 npm:
