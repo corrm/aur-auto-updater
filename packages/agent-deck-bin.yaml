@@ -23,3 +23,14 @@ upstream:
 type: binary
 binary:
   binary_name: agent-deck
+
+provides:
+  - agent-deck
+
+install_files:
+  - source: LICENSE
+    dest: /usr/share/licenses/agent-deck-bin
+    mode: "644"
+  - source: README.md
+    dest: /usr/share/doc/agent-deck-bin
+    mode: "644"

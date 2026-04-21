@@ -22,3 +22,6 @@ appimage:
   binary_name: superset-desktop
   desktop: true
   icons: true
+
+provides:
+  - superset-desktop

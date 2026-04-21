@@ -39,7 +39,9 @@ package() {
 {%- else %}
     install -Dm644 "${srcdir}/$(basename "${source}")" "${pkgdir}/opt/${pkgname}/${pkgname}"
 {%- endif %}
-{%- if license_file %}
-    install -Dm644 "{{ license_file }}" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+{%- if install_files %}
+{%- for file in install_files %}
+    install -Dm{{ file.mode }} "{{ file.source }}" "${pkgdir}{{ file.dest }}"
+{%- endfor %}
 {%- endif %}
 }

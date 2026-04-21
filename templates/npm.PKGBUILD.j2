@@ -68,8 +68,10 @@ package() {
         mv "$tmppackage" "$pkgjson"
         chmod 644 "$pkgjson"
     done
-{%- if license_file %}
-    install -Dm644 "${srcdir}/{{ license_file }}" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+{%- if install_files %}
+{%- for file in install_files %}
+    install -Dm{{ file.mode }} "${srcdir}/{{ file.source }}" "${pkgdir}{{ file.dest }}"
+{%- endfor %}
 {%- endif %}
 {%- if systemd_service %}
     install -Dm644 "${srcdir}/{{ systemd_service }}" "${pkgdir}/usr/lib/systemd/user/{{ systemd_service }}"

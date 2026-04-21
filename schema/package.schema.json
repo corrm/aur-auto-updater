@@ -236,13 +236,39 @@
         "type": "string"
       }
     },
-    "license_file": {
-      "type": "string",
-      "description": "License file to install (relative to source archive). Default: LICENSE"
-    },
     "systemd_service": {
       "type": "string",
       "description": "Systemd service file to install (relative to source archive)."
+    },
+    "install_files": {
+      "type": "array",
+      "description": "Files to install with custom destinations and modes.",
+      "items": {
+        "type": "object",
+        "required": [
+          "source",
+          "dest",
+          "mode"
+        ],
+        "properties": {
+          "source": {
+            "type": "string",
+            "description": "Source file path (relative to archive root)."
+          },
+          "dest": {
+            "type": "string",
+            "description": "Destination path (e.g., /usr/share/licenses/)."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "644",
+              "755"
+            ],
+            "description": "File permissions. 644 for files, 755 for executables."
+          }
+        }
+      }
     }
   },
   "oneOf": [
