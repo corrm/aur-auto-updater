@@ -46,9 +46,18 @@ package() {
     install -dm755 "${npm_lib}"
     cp -r . "${npm_lib}/{{ pkgname }}"
 
-    {% if binary_name %}
     install -dm755 "${pkgdir}/usr/bin"
-    ln -s "${npm_lib}/{{ pkgname }}/bin/{{ binary_name }}" "${pkgdir}/usr/bin/{{ binary_name }}"
+
+    if [ -f package.json ] && [ -n "$(jq -r '.bin // {}' package.json)" ]; then
+        jq -r '.bin | to_entries[] | "\(.key)=\(.value)"' package.json | while read -r line; do
+            local bin_name="${line%%=*}"
+            local bin_path="${line##*=}"
+            ln -s "${npm_lib}/{{ pkgname }}/${bin_path}" "${pkgdir}/usr/bin/${bin_name}"
+        done
+    {% else %}
+        {% if binary_name %}
+        ln -s "${npm_lib}/{{ pkgname }}/bin/{{ binary_name }}" "${pkgdir}/usr/bin/{{ binary_name }}"
+        {% endif %}
     {% endif %}
 
     find "${pkgdir}" -name "package.json" -print0 | xargs -r -0 sed -i '/_where/d'
