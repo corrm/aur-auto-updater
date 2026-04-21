@@ -535,3 +535,60 @@ class TestInstallFiles:
         with open('schema/package.schema.json', 'r') as f:
             schema = json.load(f)
         assert 'license_file' not in schema['properties']
+
+    def test_install_files_in_debian_template(self) -> None:
+        """Test that debian template supports install_files"""
+        from jinja2 import Template
+        template = Template(open('templates/debian.PKGBUILD.j2').read())
+        rendered = template.render(
+            pkgname="test-pkg", pkgver="1.0", pkgrel="1",
+            pkgdesc="Test", arch=["x86_64"], url="https://test.com",
+            license=["MIT"], depends=[], makedepends=[], options=[],
+            conflicts=[], provides=[], download_url="https://test.deb",
+            sha256="abc123", extract_method="ar",
+            install_files=[{"source": "LICENSE", "dest": "/usr/share/licenses/test-pkg", "mode": "644"}]
+        )
+        assert 'install -Dm644 "LICENSE"' in rendered
+
+    def test_install_files_in_appimage_template(self) -> None:
+        """Test that appimage template supports install_files"""
+        from jinja2 import Template
+        template = Template(open('templates/appimage.PKGBUILD.j2').read())
+        rendered = template.render(
+            pkgname="test-pkg", pkgver="1.0", pkgrel="1",
+            pkgdesc="Test", arch=["x86_64"], url="https://test.com",
+            license=["MIT"], depends=[], makedepends=[], options=[],
+            conflicts=[], download_url="https://test.AppImage",
+            sha256="abc123", appimage_name="test.AppImage",
+            binary_name="test", desktop=False, icons=False,
+            install_files=[{"source": "LICENSE", "dest": "/usr/share/licenses/test-pkg", "mode": "644"}]
+        )
+        assert 'install -Dm644 "${srcdir}/LICENSE"' in rendered
+
+    def test_install_files_in_binary_template_with_extract(self) -> None:
+        """Test that binary template with extract != none supports install_files"""
+        from jinja2 import Template
+        template = Template(open('templates/binary.PKGBUILD.j2').read())
+        rendered = template.render(
+            pkgname="test-pkg", pkgver="1.0", pkgrel="1",
+            pkgdesc="Test", arch=["x86_64"], url="https://test.com",
+            license=["MIT"], depends=[], makedepends=[], options=[],
+            conflicts=[], provides=[], download_url="https://test.tar.gz",
+            sha256="abc123", extract="tar", binary_name="test",
+            install_files=[{"source": "LICENSE", "dest": "/usr/share/licenses/test-pkg", "mode": "644"}]
+        )
+        assert 'install -Dm644 "LICENSE"' in rendered
+
+    def test_install_files_in_binary_template_no_extract(self) -> None:
+        """Test that binary template with extract=none does NOT include install_files"""
+        from jinja2 import Template
+        template = Template(open('templates/binary.PKGBUILD.j2').read())
+        rendered = template.render(
+            pkgname="test-pkg", pkgver="1.0", pkgrel="1",
+            pkgdesc="Test", arch=["x86_64"], url="https://test.com",
+            license=["MIT"], depends=[], makedepends=[], options=[],
+            conflicts=[], provides=[], download_url="https://test.tar.gz",
+            sha256="abc123", extract="none", binary_name="test",
+            install_files=[{"source": "LICENSE", "dest": "/usr/share/licenses/test-pkg", "mode": "644"}]
+        )
+        assert 'install -Dm644 "LICENSE"' not in rendered

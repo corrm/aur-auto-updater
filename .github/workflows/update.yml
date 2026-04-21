@@ -20,8 +20,6 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v8.1.0
-        with:
-          enable-default-python: true
 
       - name: Install Python deps
         run: |
