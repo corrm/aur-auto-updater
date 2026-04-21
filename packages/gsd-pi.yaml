@@ -8,7 +8,7 @@ depends: []
 
 upstream:
   provider: npm
-  npm_name: gsd-pi
+  npm_name: "@gsd-build/engine-linux-x64-gnu"
 
 type: npm
 npm:
