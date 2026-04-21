@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -12,9 +14,41 @@ import yaml  # type: ignore[import-untyped]
 from jinja2 import Template  # type: ignore[import-untyped]
 
 from upstream import fetch
-from state import load_state, save_state
-from template import select_template
 from aur import exists as aur_exists
+
+
+def select_template(cfg: dict[str, Any]) -> str:
+    if cfg["type"] == "appimage":
+        return "templates/appimage.PKGBUILD.j2"
+    if cfg["type"] == "debian":
+        return "templates/debian.PKGBUILD.j2"
+    raise RuntimeError("Unknown package type")
+
+
+def default_state(pkgname: str) -> dict[str, Any]:
+    return {
+        "pkgname": pkgname,
+        "last_version": None,
+        "last_asset_id": None,
+        "last_commit_sha": None,
+        "last_updated": None,
+        "last_success": False,
+        "last_error": None,
+        "retry_count": 0
+    }
+
+
+def load_state(path: str, pkgname: str) -> dict[str, Any]:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if not os.path.exists(path):
+        return default_state(pkgname)
+    return json.load(open(path))
+
+
+def save_state(path: str, state: dict[str, Any]) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    state["last_updated"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    json.dump(state, open(path, "w"), indent=2)
 
 
 def sha256(url: str) -> str:

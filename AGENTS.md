@@ -20,6 +20,16 @@ python scripts/validate.py
 python -m pytest tests/ -v
 ```
 
+## Scripts Structure
+
+- `run_all.py` - Main orchestrator (entry point)
+- `build.py` - Build packages from YAML config (includes state + template logic)
+- `aur.py` - AUR repository operations
+- `makepkg_wrapper.py` - Makepkg wrapper
+- `upstream.py` - Fetch upstream versions (GitHub, Debian)
+- `validate.py` - Validate YAML against schema
+- `template.py` - Re-exports from build (backwards compat)
+
 ## Workflows
 
 - `aur-autosync`: Runs every 6 hours or manually - builds and publishes to AUR

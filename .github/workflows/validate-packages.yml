@@ -1,4 +1,4 @@
-name: Validate Package YAML
+name: Validate YAML Packages
 
 on:
   push:
