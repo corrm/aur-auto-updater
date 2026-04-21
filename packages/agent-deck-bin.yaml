@@ -29,8 +29,8 @@ provides:
 
 install_files:
   - source: LICENSE
-    dest: /usr/share/licenses/agent-deck-bin
+    dest: /usr/share/licenses/${pkgname}
     mode: "644"
   - source: README.md
-    dest: /usr/share/doc/agent-deck-bin
+    dest: /usr/share/doc/${pkgname}
     mode: "644"

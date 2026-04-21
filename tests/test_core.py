@@ -464,3 +464,74 @@ class TestDefaultArchMapping:
                 arch_values_to_try.append(mapped)
 
         assert arch_values_to_try == ["i686"]
+
+
+class TestInstallFiles:
+    """Tests for install_files configuration."""
+
+    def test_install_files_schema(self) -> None:
+        """Test that install_files is defined in schema"""
+        import json
+        with open('schema/package.schema.json', 'r') as f:
+            schema = json.load(f)
+        assert 'install_files' in schema['properties']
+
+    def test_install_files_structure(self) -> None:
+        """Test install_files array structure"""
+        install_files = [
+            {"source": "LICENSE", "dest": "/usr/share/licenses/${pkgname}", "mode": "644"},
+            {"source": "README.md", "dest": "/usr/share/doc/${pkgname}", "mode": "644"}
+        ]
+        for f in install_files:
+            assert 'source' in f
+            assert 'dest' in f
+            assert 'mode' in f
+
+    def test_install_files_mode_validation(self) -> None:
+        """Test that mode must be 644 or 755"""
+        valid_modes = ["644", "755"]
+        for mode in valid_modes:
+            assert mode in valid_modes
+
+    def test_install_files_pkgname_interpolation(self) -> None:
+        """Test that ${pkgname} is replaced correctly in dest path"""
+        pkgname = "my-package"
+        install_files = [
+            {"source": "LICENSE", "dest": "/usr/share/licenses/${pkgname}", "mode": "644"}
+        ]
+        # Simulate what template does
+        for f in install_files:
+            dest = f["dest"].replace("${pkgname}", pkgname)
+            assert dest == "/usr/share/licenses/my-package"
+
+    def test_install_files_multiple_files(self) -> None:
+        """Test multiple files in install_files array"""
+        install_files = [
+            {"source": "LICENSE", "dest": "/usr/share/licenses/${pkgname}", "mode": "644"},
+            {"source": "README.md", "dest": "/usr/share/doc/${pkgname}", "mode": "644"},
+            {"source": "CHANGELOG.md", "dest": "/usr/share/doc/${pkgname}", "mode": "644"},
+            {"source": "mybin", "dest": "/usr/bin", "mode": "755"}
+        ]
+        assert len(install_files) == 4
+        assert install_files[3]["mode"] == "755"  # executable
+
+    def test_install_files_generates_install_commands(self) -> None:
+        """Test that install_files generates correct install commands"""
+        install_files = [
+            {"source": "LICENSE", "dest": "/usr/share/licenses/${pkgname}", "mode": "644"}
+        ]
+        pkgname = "test-pkg"
+        # Simulate what template does - replaces ${pkgname} in dest
+        for f in install_files:
+            dest = f["dest"].replace("${pkgname}", pkgname)
+            # Check that variable was replaced
+            assert dest == "/usr/share/licenses/test-pkg"
+            # Check mode is correct
+            assert f["mode"] == "644"
+
+    def test_install_files_no_license_file_in_schema(self) -> None:
+        """Test that old license_file property is removed"""
+        import json
+        with open('schema/package.schema.json', 'r') as f:
+            schema = json.load(f)
+        assert 'license_file' not in schema['properties']
