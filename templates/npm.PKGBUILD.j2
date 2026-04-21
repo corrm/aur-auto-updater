@@ -59,15 +59,15 @@ package() {
             ln -s "${install_lib}/${bin_path}" "${pkgdir}/usr/bin/${bin_name}"
             chmod +x "${staging_lib}/${bin_path}"
         done
-    {% else %}
         {% if binary_name %}
+    else
         # Fallback: use binary_name if no bin entries in package.json
         if [ -f "bin/{{ binary_name }}" ]; then
             ln -s "${install_lib}/bin/{{ binary_name }}" "${pkgdir}/usr/bin/{{ binary_name }}"
             chmod +x "${staging_lib}/bin/{{ binary_name }}"
         fi
         {% endif %}
-    {% endif %}
+    fi
 
     # Clean up package.json files
     find "${pkgdir}" -name "package.json" -print0 | xargs -r -0 sed -i '/_where/d'
