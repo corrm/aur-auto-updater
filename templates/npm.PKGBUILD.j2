@@ -40,14 +40,15 @@ prepare() {
 }
 
 package() {
-    {% if pm == 'bun' %}
     cd "${srcdir}/npm_pkg/package"
-    mkdir -p "${srcdir}/npm-cache"
-    bun install --cache "${srcdir}/npm-cache" --global --prefix "${pkgdir}/usr" --ignore-scripts
-    {% else %}
-    cd "${srcdir}/npm_pkg/package"
-    mkdir -p "${srcdir}/npm-cache"
-    npm install --cache "${srcdir}/npm-cache" -g --prefix "${pkgdir}/usr" --ignore-scripts
+
+    local npm_lib="${pkgdir}/usr/lib/node_modules"
+    install -dm755 "${npm_lib}"
+    cp -r . "${npm_lib}/{{ pkgname }}"
+
+    {% if binary_name %}
+    install -dm755 "${pkgdir}/usr/bin"
+    ln -s "${npm_lib}/{{ pkgname }}/bin/{{ binary_name }}" "${pkgdir}/usr/bin/{{ binary_name }}"
     {% endif %}
 
     find "${pkgdir}" -name "package.json" -print0 | xargs -r -0 sed -i '/_where/d'
