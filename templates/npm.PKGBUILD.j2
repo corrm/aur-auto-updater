@@ -54,11 +54,13 @@ package() {
             local bin_path="${line##*=}"
             ln -s "${npm_lib}/{{ pkgname }}/${bin_path}" "${pkgdir}/usr/bin/${bin_name}"
         done
-    {% else %}
+    else
         {% if binary_name %}
-        ln -s "${npm_lib}/{{ pkgname }}/bin/{{ binary_name }}" "${pkgdir}/usr/bin/{{ binary_name }}"
+        if [ -f "bin/{{ binary_name }}" ]; then
+            ln -s "${npm_lib}/{{ pkgname }}/bin/{{ binary_name }}" "${pkgdir}/usr/bin/{{ binary_name }}"
+        fi
         {% endif %}
-    {% endif %}
+    fi
 
     find "${pkgdir}" -name "package.json" -print0 | xargs -r -0 sed -i '/_where/d'
 
