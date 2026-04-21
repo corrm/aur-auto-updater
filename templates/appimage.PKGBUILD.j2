@@ -36,6 +36,13 @@ package() {
     install -dm755 "${pkgdir}/usr/bin"
     ln -s "/opt/${pkgname}/${_appimage}" "${pkgdir}/usr/bin/{{ binary_name }}"
 
+    # Install extra files from srcdir (e.g., LICENSE alongside AppImage)
+{%- if install_files %}
+{%- for file in install_files %}
+    install -Dm{{ file.mode }} "${srcdir}/{{ file.source }}" "${pkgdir}{{ file.dest }}"
+{%- endfor %}
+{%- endif %}
+
     cd "${srcdir}/squashfs-root"
 {%- if desktop %}
     find . -maxdepth 1 -name '*.desktop' -exec \
@@ -65,10 +72,5 @@ package() {
             break
         fi
     done
-{%- endif %}
-{%- if install_files %}
-{%- for file in install_files %}
-    install -Dm{{ file.mode }} "{{ file.source }}" "${pkgdir}{{ file.dest }}"
-{%- endfor %}
 {%- endif %}
 }
