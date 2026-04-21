@@ -9,10 +9,10 @@ license=({{ license | join(' ') }})
 {% set pm = package_manager | default('npm') %}
 {% if pm == 'bun' %}
 {% set builtin_deps = ['bun'] %}
-makedepends=({{ makedepends | join(' ') }} bun jq)
+makedepends=({{ makedepends | join(' ') }} bun)
 {% else %}
 {% set builtin_deps = ['nodejs', 'npm'] %}
-makedepends=({{ makedepends | join(' ') }} jq)
+makedepends=({{ makedepends | join(' ') }} npm)
 {% endif %}
 
 {% set user_deps = depends or [] %}{% set all_depends = (user_deps + builtin_deps) | unique %}
@@ -31,52 +31,21 @@ provides=({{ provides | join(' ') }})
 _npm_name="{{ _npm_name }}"
 source=("{{ download_url }}")
 sha256sums=('{{ sha256 }}')
-noextract=("${_npm_name}-${pkgver}.tgz")
 
 prepare() {
-    mkdir -p "${srcdir}/npm_pkg"
-    cd "${srcdir}/npm_pkg"
-    tar -xzf "../${_npm_name}-${pkgver}.tgz"
+    mkdir -p "${srcdir}/npm-cache"
 }
 
 package() {
-    cd "${srcdir}/npm_pkg/package"
+    cd "${srcdir}"
 
-    # Install dependencies (skip postinstall scripts)
     {% if pm == 'bun' %}
-    bun install --ignore-scripts
+    bun install --cache "${srcdir}/npm-cache" --global --prefix "${pkgdir}/usr" --ignore-scripts "{{ _npm_name }}-${pkgver}.tgz"
     {% else %}
-    npm install --ignore-scripts
+    npm install -g --prefix "${pkgdir}/usr" --cache "${srcdir}/npm-cache" --ignore-scripts "{{ _npm_name }}-${pkgver}.tgz"
     {% endif %}
 
-    # Install package to staging directory
-    local staging_lib="${pkgdir}/usr/lib/node_modules/{{ pkgname }}"
-    install -dm755 "${staging_lib}"
-    cp -r . "${staging_lib}"
-
-    # Create bin symlinks - use absolute path for runtime
-    install -dm755 "${pkgdir}/usr/bin"
-    local install_lib="/usr/lib/node_modules/{{ pkgname }}"
-
-    if [ -f package.json ] && [ -n "$(jq -r '.bin // {}' package.json)" ]; then
-        # Read bin entries from package.json and create symlinks
-        jq -r '.bin | to_entries[] | "\(.key)=\(.value)"' package.json | while read -r line; do
-            local bin_name="${line%%=*}"
-            local bin_path="${line##*=}"
-            ln -s "${install_lib}/${bin_path}" "${pkgdir}/usr/bin/${bin_name}"
-            chmod +x "${staging_lib}/${bin_path}"
-        done
-        {% if binary_name %}
-    else
-        # Fallback: use binary_name if no bin entries in package.json
-        if [ -f "bin/{{ binary_name }}" ]; then
-            ln -s "${install_lib}/bin/{{ binary_name }}" "${pkgdir}/usr/bin/{{ binary_name }}"
-            chmod +x "${staging_lib}/bin/{{ binary_name }}"
-        fi
-        {% endif %}
-    fi
-
-    # Clean up package.json files
+    # Fix package.json files
     find "${pkgdir}" -name "package.json" -print0 | xargs -r -0 sed -i '/_where/d'
 
     local tmppackage="$(mktemp)"
