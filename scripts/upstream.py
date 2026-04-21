@@ -13,7 +13,7 @@ def github_latest(repo: str, asset_regex: str) -> tuple[str | None, str, int | N
 
     Args:
         repo: GitHub repository in format 'owner/repo'
-        asset_regex: Regex pattern to match asset name
+        asset_regex: Regex pattern to match asset name (may include ${pkgver}, ${arch})
 
     Returns:
         Tuple of (tag_name or None, download_url, asset_id or None)
@@ -31,6 +31,11 @@ def github_latest(repo: str, asset_regex: str) -> tuple[str | None, str, int | N
     tag = re.sub(r'^[a-zA-Z_-]*v?', '', raw_tag).lstrip('-')
 
     print(f"  [GitHub] 🏷️  Found tag: {tag} (from {raw_tag})")
+
+    # Interpolate ${pkgver} if present in asset_regex
+    if "${pkgver}" in asset_regex:
+        asset_regex = asset_regex.replace("${pkgver}", tag)
+        print(f"  [GitHub] 🔄 Interpolated asset_regex: {asset_regex}")
 
     for a in data["assets"]:
         if re.match(asset_regex, a["name"]):

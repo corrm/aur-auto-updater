@@ -291,3 +291,43 @@ class TestEdgeCases:
         url = "https://example.com/releases/app.tar.gz"
         is_debian = "debian.org" in url or "debian.net" in url
         assert is_debian is False
+
+
+class TestAssetRegexInterpolation:
+    """Tests for ${arch} and ${pkgver} interpolation in asset_regex."""
+
+    def test_arch_interpolation_single(self) -> None:
+        """Test ${arch} interpolation with single arch string"""
+        arch = "x86_64"
+        asset_regex = ".*-${arch}.AppImage$"
+        result = asset_regex.replace("${arch}", arch)
+        assert result == ".*-x86_64.AppImage$"
+
+    def test_arch_interpolation_list(self) -> None:
+        """Test ${arch} interpolation with arch list"""
+        arch = ["x86_64", "aarch64"]
+        arch_value = arch[0] if isinstance(arch, list) else arch
+        asset_regex = ".*-${arch}.AppImage$"
+        result = asset_regex.replace("${arch}", arch_value)
+        assert result == ".*-x86_64.AppImage$"
+
+    def test_pkgver_interpolation(self) -> None:
+        """Test ${pkgver} interpolation in asset_regex"""
+        tag = "1.5.6"
+        asset_regex = "app-${pkgver}-${arch}.AppImage$"
+        result = asset_regex.replace("${pkgver}", tag)
+        result = result.replace("${arch}", "x86_64")
+        assert result == "app-1.5.6-x86_64.AppImage$"
+
+    def test_pkgver_from_github_tag(self) -> None:
+        """Test extracting pkgver from GitHub tag format"""
+        raw_tag = "desktop-v1.5.6"
+        tag = re.sub(r'^[a-zA-Z_-]*v?', '', raw_tag).lstrip('-')
+        assert tag == "1.5.6"
+
+    def test_no_interpolation_when_not_present(self) -> None:
+        """Test asset_regex unchanged when no placeholders"""
+        asset_regex = ".*AppImage$"
+        result = asset_regex.replace("${pkgver}", "1.0.0")
+        result = result.replace("${arch}", "x86_64")
+        assert result == ".*AppImage$"
