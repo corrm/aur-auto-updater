@@ -43,11 +43,11 @@ package() {
     {% if pm == 'bun' %}
     cd "${srcdir}/npm_pkg/package"
     mkdir -p "${srcdir}/npm-cache"
-    bun install --cache "${srcdir}/npm-cache" --global --prefix "${pkgdir}/usr"
+    bun install --cache "${srcdir}/npm-cache" --global --prefix "${pkgdir}/usr" --ignore-scripts
     {% else %}
     cd "${srcdir}/npm_pkg/package"
     mkdir -p "${srcdir}/npm-cache"
-    npm install --cache "${srcdir}/npm-cache" -g --prefix "${pkgdir}/usr"
+    npm install --cache "${srcdir}/npm-cache" -g --prefix "${pkgdir}/usr" --ignore-scripts
     {% endif %}
 
     find "${pkgdir}" -name "package.json" -print0 | xargs -r -0 sed -i '/_where/d'
