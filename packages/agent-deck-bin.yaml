@@ -1,0 +1,25 @@
+aur_repo: agent-deck-bin
+pkgname: agent-deck-bin
+pkgdesc: Terminal session manager for AI coding agents
+url: https://github.com/asheshgoplani/agent-deck
+license: [MIT]
+arch: 
+  - x86_64
+  - aarch64
+
+conflicts:
+  - agent-deck
+
+depends:
+  - tmux
+  - glibc
+
+upstream:
+  provider: github
+  repo: asheshgoplani/agent-deck
+  asset_regex: ".*_linux_${arch}\\.tar\\.gz"
+  extract: tar
+
+type: binary
+binary:
+  binary_name: agent-deck

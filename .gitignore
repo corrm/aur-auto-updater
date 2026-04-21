@@ -44,3 +44,6 @@ __pycache__/
 
 # Build system
 node_modules/
+
+/state/
+report.json

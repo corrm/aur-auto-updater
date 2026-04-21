@@ -7,19 +7,21 @@ url="{{ url }}"
 license=({{ license | join(' ') }})
 
 depends=({{ depends | join(' ') }})
-
-{% set method = extract_method | default('ar') %}
-{% if method == 'dpkg' %}
-makedepends=({{ makedepends | join(' ') }} dpkg)
-{% else %}
-makedepends=({{ makedepends | join(' ') }})
-{% endif %}
-
+{%- set method = extract_method | default('ar') %}
+{%- if method == 'dpkg' %}
+{%- set makedepends_list = makedepends + ['dpkg'] %}
+{%- else %}
+{%- set makedepends_list = makedepends %}
+{%- endif %}
+{%- if makedepends_list %}
+makedepends=({{ makedepends_list | join(' ') }})
+{%- endif %}
+{%- if options %}
 options=({{ options | join(' ') }})
-
-{% if conflicts %}
+{%- endif %}
+{%- if conflicts %}
 conflicts=({{ conflicts | join(' ') }})
-{% endif %}
+{%- endif %}
 
 source=("{{ download_url }}")
 sha256sums=('{{ sha256 }}')
@@ -29,28 +31,23 @@ _debfile="$(basename '{{ download_url }}')"
 prepare() {
     mkdir -p "${srcdir}/deb_contents"
     cd "${srcdir}/deb_contents"
-
-    {% if method == 'ar' %}
+{%- if method == 'ar' %}
     command -v ar >/dev/null 2>&1 || { echo "Error: 'ar' is required but not found."; exit 1; }
     ar x "../${_debfile}"
-    {% elif method == 'dpkg' %}
+{%- elif method == 'dpkg' %}
     command -v dpkg-deb >/dev/null 2>&1 || { echo "Error: 'dpkg-deb' is required but not found."; exit 1; }
     dpkg-deb -x "../${_debfile}" .
-    {% elif method == 'bsdtar' %}
+{%- elif method == 'bsdtar' %}
     command -v bsdtar >/dev/null 2>&1 || { echo "Error: 'bsdtar' is required but not found."; exit 1; }
     bsdtar -xf "../${_debfile}"
-    {% endif %}
+{%- endif %}
 }
 
 package() {
     cd "${srcdir}/deb_contents"
-
     if [[ ! -f data.tar.* ]]; then
         echo "Error: data.tar.* not found in the Debian package."
         exit 1
     fi
-
     tar -xf data.tar.* -C "${pkgdir}"
-
-    echo "Files extracted successfully."
 }

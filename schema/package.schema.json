@@ -25,7 +25,8 @@
         "appimage",
         "debian",
         "pypi",
-        "npm"
+        "npm",
+        "binary"
       ]
     },
     "pkgdesc": {
@@ -52,7 +53,7 @@
     },
     "depends": {
       "type": "array",
-      "description": "Runtime dependencies for the package. Built-in dependencies are added automatically based on package manager.",
+      "description": "Runtime dependencies for the package.",
       "items": {
         "type": "string"
       }
@@ -101,19 +102,36 @@
         },
         "url": {
           "type": "string",
-          "description": "Direct URL used when provider is 'url'."
+          "description": "Direct URL used when provider is url."
         },
         "asset_regex": {
           "type": "string",
           "description": "Regex used to match release assets from upstream distributions."
         },
+        "extract": {
+          "type": "string",
+          "enum": [
+            "none",
+            "tar",
+            "zip"
+          ],
+          "default": "none",
+          "description": "Extraction method for compressed downloads. tar extracts .tar.gz/.tar.bz2/.tar.xz, zip extracts .zip archives. none keeps the archive as-is."
+        },
         "pypi_name": {
           "type": "string",
-          "description": "PyPI package name (when provider is 'pypi'). May differ from pkgname."
+          "description": "PyPI package name (when provider is pypi). May differ from pkgname."
         },
         "npm_name": {
           "type": "string",
-          "description": "npm package name (when provider is 'npm'). May differ from pkgname."
+          "description": "npm package name (when provider is npm). May differ from pkgname."
+        },
+        "arch_map": {
+          "type": "object",
+          "description": "Mapping from Arch architecture names to GitHub asset architecture names. E.g., {\"x86_64\": \"amd64\", \"aarch64\": \"arm64\"}.",
+          "additionalProperties": {
+            "type": "string"
+          }
         }
       }
     },
@@ -136,6 +154,16 @@
         "icons": {
           "type": "boolean",
           "description": "Whether to install application icons."
+        }
+      }
+    },
+    "binary": {
+      "type": "object",
+      "description": "Binary package configuration for extracted executables.",
+      "properties": {
+        "binary_name": {
+          "type": "string",
+          "description": "Executable name to install in /usr/bin."
         }
       }
     },
@@ -248,6 +276,16 @@
           "const": "npm"
         }
       }
+    },
+    {
+      "properties": {
+        "type": {
+          "const": "binary"
+        }
+      },
+      "required": [
+        "binary"
+      ]
     }
   ]
 }

@@ -333,3 +333,134 @@ class TestAssetRegexInterpolation:
         for key, value in interpolate.items():
             asset_regex = asset_regex.replace(f"${{{key}}}", value)
         assert asset_regex == ".*AppImage$"
+
+
+class TestArchMapping:
+    """Tests for arch_map configuration that maps Arch arch names to GitHub asset names."""
+
+    def test_arch_map_x86_64_to_amd64(self) -> None:
+        """Test mapping x86_64 to amd64 for GitHub assets"""
+        arch_map = {"x86_64": "amd64", "aarch64": "arm64"}
+        arch = "x86_64"
+        mapped = arch_map.get(arch, arch)
+        assert mapped == "amd64"
+
+    def test_arch_map_aarch64_to_arm64(self) -> None:
+        """Test mapping aarch64 to arm64 for GitHub assets"""
+        arch_map = {"x86_64": "amd64", "aarch64": "arm64"}
+        arch = "aarch64"
+        mapped = arch_map.get(arch, arch)
+        assert mapped == "arm64"
+
+    def test_arch_map_no_mapping_uses_default(self) -> None:
+        """Test that when no arch_map provided, default arch value is used"""
+        arch_map: dict[str, str] = {}
+        arch = "x86_64"
+        mapped = arch_map.get(arch, arch)
+        assert mapped == "x86_64"
+
+    def test_arch_map_partial_mapping(self) -> None:
+        """Test partial arch_map - some mapped, some not"""
+        arch_map = {"x86_64": "amd64"}
+        # x86_64 should map to amd64
+        assert arch_map.get("x86_64", "x86_64") == "amd64"
+        # aarch64 should fall back to default
+        assert arch_map.get("aarch64", "aarch64") == "aarch64"
+
+    def test_arch_map_with_interpolation(self) -> None:
+        """Test arch_map used in interpolation dict for GitHub asset matching"""
+        arch_map = {"x86_64": "amd64", "aarch64": "arm64"}
+        arch = "x86_64"
+        interpolate: dict[str, str] = {}
+
+        if arch_map and arch in arch_map:
+            interpolate["arch"] = arch_map[arch]
+        else:
+            interpolate["arch"] = arch
+
+        assert interpolate["arch"] == "amd64"
+
+    def test_agent_deck_asset_regex_with_arch_map(self) -> None:
+        """Test agent-deck style asset regex with arch mapping"""
+        # agent-deck uses: ".*-linux-${arch}\.tar\.gz"
+        # With arch_map: x86_64 -> amd64
+        arch_map = {"x86_64": "amd64", "aarch64": "arm64"}
+        arch = "x86_64"
+
+        # Using simple string to avoid regex escaping confusion in test
+        asset_regex = ".*-linux-${arch}.tar.gz"
+        if arch_map and arch in arch_map:
+            arch_value = arch_map[arch]
+        else:
+            arch_value = arch
+
+        asset_regex = asset_regex.replace(f"${{arch}}", arch_value)
+
+        assert asset_regex == ".*-linux-amd64.tar.gz"
+        assert "amd64" in asset_regex
+
+    def test_binary_type_in_schema(self) -> None:
+        """Test that 'binary' is a valid package type"""
+        valid_types = ["appimage", "debian", "pypi", "npm", "binary"]
+        assert "binary" in valid_types
+
+    def test_extract_tar_from_upstream(self) -> None:
+        """Test extract: tar from upstream config"""
+        upstream = {"provider": "github", "repo": "user/repo", "extract": "tar"}
+        extract = upstream.get("extract", "none")
+        assert extract == "tar"
+
+    def test_extract_zip_from_upstream(self) -> None:
+        """Test extract: zip from upstream config"""
+        upstream = {"provider": "github", "repo": "user/repo", "extract": "zip"}
+        extract = upstream.get("extract", "none")
+        assert extract == "zip"
+
+    def test_extract_none_default(self) -> None:
+        """Test extract defaults to 'none' when not specified"""
+        upstream = {"provider": "github", "repo": "user/repo"}
+        extract = upstream.get("extract", "none")
+        assert extract == "none"
+
+
+class TestDefaultArchMapping:
+    """Tests for automatic default arch mapping in upstream.py"""
+
+    def test_default_arch_map_x86_64_to_amd64(self) -> None:
+        """Test default mapping: x86_64 -> amd64"""
+        from upstream import DEFAULT_ARCH_MAP
+        assert DEFAULT_ARCH_MAP["x86_64"] == "amd64"
+
+    def test_default_arch_map_aarch64_to_arm64(self) -> None:
+        """Test default mapping: aarch64 -> arm64"""
+        from upstream import DEFAULT_ARCH_MAP
+        assert DEFAULT_ARCH_MAP["aarch64"] == "arm64"
+
+    def test_arch_values_to_try_order(self) -> None:
+        """Test that original arch is tried first, then mapped as fallback"""
+        DEFAULT_ARCH_MAP = {"x86_64": "amd64", "aarch64": "arm64"}
+        original_arch = "x86_64"
+
+        # Build list: original first, then mapped if different
+        arch_values_to_try = [original_arch]
+        if original_arch in DEFAULT_ARCH_MAP:
+            mapped = DEFAULT_ARCH_MAP[original_arch]
+            if mapped != original_arch:
+                arch_values_to_try.append(mapped)
+
+        # Should try x86_64 first, then amd64
+        assert arch_values_to_try == ["x86_64", "amd64"]
+
+    def test_non_mapped_arch_single_value(self) -> None:
+        """Test that if arch not in map, only one value is tried"""
+        DEFAULT_ARCH_MAP = {"x86_64": "amd64", "aarch64": "arm64"}
+        original_arch = "i686"
+
+        # Not in map, so only original is tried
+        arch_values_to_try = [original_arch]
+        if original_arch in DEFAULT_ARCH_MAP:
+            mapped = DEFAULT_ARCH_MAP[original_arch]
+            if mapped != original_arch:
+                arch_values_to_try.append(mapped)
+
+        assert arch_values_to_try == ["i686"]

@@ -7,8 +7,14 @@ from typing import Any
 
 import requests  # type: ignore[import-untyped]
 
+# Default arch mapping: Arch names -> GitHub asset names
+DEFAULT_ARCH_MAP = {
+    "x86_64": "amd64",
+    "aarch64": "arm64",
+}
 
-def github_latest(repo: str, asset_regex: str, interpolate: dict[str, str] | None = None) -> tuple[str | None, str, int | None]:
+
+def github_latest(repo: str, asset_regex: str, interpolate: dict[str, str] | None = None) -> tuple[str | None, str, int | None, str | None]:
     """Fetch latest release info from GitHub.
 
     Args:
@@ -17,7 +23,7 @@ def github_latest(repo: str, asset_regex: str, interpolate: dict[str, str] | Non
         interpolate: Optional dict of {var_name: value} for interpolation (e.g., {arch: x86_64})
 
     Returns:
-        Tuple of (tag_name or None, download_url, asset_id or None)
+        Tuple of (tag_name or None, download_url, asset_id or None, sha256 or None)
 
     Raises:
         RuntimeError: If no matching asset is found
@@ -33,19 +39,41 @@ def github_latest(repo: str, asset_regex: str, interpolate: dict[str, str] | Non
 
     print(f"  [GitHub] 🏷️  Found tag: {tag} (from {raw_tag})")
 
-    # Interpolate placeholders from dict
-    if interpolate:
-        for key, value in interpolate.items():
-            placeholder = f"${{{key}}}"
-            if placeholder in asset_regex:
-                asset_regex = asset_regex.replace(placeholder, value)
-        if interpolate:
-            print(f"  [GitHub] 🔄 Interpolated asset_regex: {asset_regex}")
+    # Build list of arch values to try: original first, then mapped fallback
+    arch_values_to_try = []
+    if interpolate and "arch" in interpolate:
+        original_arch = interpolate["arch"]
+        arch_values_to_try.append(original_arch)
+        # Try mapped arch if different
+        if original_arch in DEFAULT_ARCH_MAP:
+            mapped = DEFAULT_ARCH_MAP[original_arch]
+            if mapped != original_arch:
+                arch_values_to_try.append(mapped)
 
-    for a in data["assets"]:
-        if re.match(asset_regex, a["name"]):
-            print(f"  [GitHub] ✅ Matching asset: {a['name']}")
-            return tag, a["browser_download_url"], a["id"]
+    # If no interpolation, try once with original regex
+    if not arch_values_to_try:
+        arch_values_to_try = [None]
+
+    # Try each arch value until we find a match
+    for arch_value in arch_values_to_try:
+        asset_regex_try = asset_regex
+        if arch_value:
+            for key, value in {"arch": arch_value}.items():
+                placeholder = f"${{{key}}}"
+                if placeholder in asset_regex_try:
+                    asset_regex_try = asset_regex_try.replace(placeholder, value)
+
+            print(f"  [GitHub] 🔄 Trying arch: {asset_regex_try}")
+
+        for a in data["assets"]:
+            if re.match(asset_regex_try, a["name"]):
+                # Extract SHA256 from digest field (format: "sha256:...")
+                sha256 = None
+                digest = a.get("digest", "")
+                if digest.startswith("sha256:"):
+                    sha256 = digest[7:]  # Remove "sha256:" prefix
+                print(f"  [GitHub] ✅ Matching asset: {a['name']}")
+                return tag, a["browser_download_url"], a["id"], sha256
 
     raise RuntimeError(f"No matching asset found (pattern: {asset_regex})")
 

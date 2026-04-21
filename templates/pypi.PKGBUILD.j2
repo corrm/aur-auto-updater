@@ -6,76 +6,75 @@ arch=({{ arch | join(' ') }})
 url="{{ url }}"
 license=({{ license | join(' ') }})
 
-{% set pm = package_manager | default('pip') %}
-{% if pm == 'uv' %}
-{% set builtin_deps = ['python'] %}
-makedepends=({{ makedepends | join(' ') }} uv)
-{% else %}
-{% set builtin_deps = ['python', 'python-pip'] %}
-makedepends=({{ makedepends | join(' ') }})
-{% endif %}
+{%- set pm = package_manager | default('pip') %}
+{%- if pm == 'uv' %}
+{%- set builtin_deps = ['python'] %}
+{%- set makedepends_list = makedepends + ['uv'] %}
+{%- else %}
+{%- set builtin_deps = ['python', 'python-pip'] %}
+{%- set makedepends_list = makedepends %}
+{%- endif %}
+{%- if makedepends_list %}
+makedepends=({{ makedepends_list | join(' ') }})
+{%- endif %}
 
-{% set all_depends = (depends or []) + builtin_deps %}
+{%- set all_depends = (depends or []) + builtin_deps %}
 depends=({{ all_depends | join(' ') }})
-
+{%- if options %}
 options=({{ options | join(' ') }})
-
-{% if conflicts %}
+{%- endif %}
+{%- if conflicts %}
 conflicts=({{ conflicts | join(' ') }})
-{% endif %}
-{% if provides %}
+{%- endif %}
+{%- if provides %}
 provides=({{ provides | join(' ') }})
-{% endif %}
+{%- endif %}
 
-{% set _pypi_name = pypi_name if pypi_name else pkgname %}
+{%- set _pypi_name = pypi_name if pypi_name else pkgname %}
 _pypi_name="{{ _pypi_name }}"
 source=("{{ download_url }}")
 sha256sums=('{{ sha256 }}')
 
-{% if '.whl' in download_url %}
+{%- if '.whl' in download_url %}
 noextract=("${_pypi_name}-${pkgver}-py3-none-any.whl")
 
-{% if pm == 'uv' %}
+{%- if pm == 'uv' %}
 prepare() {
     mkdir -p "${srcdir}/wheel_extract"
     cd "${srcdir}/wheel_extract"
     unzip -q "../${_pypi_name}-${pkgver}-py3-none-any.whl" -d .
 }
-{% endif %}
+{%- endif %}
 
 package() {
-    {% if pm == 'pip' %}
+{%- if pm == 'pip' %}
     cd "${srcdir}"
     python -m installer --destdir="${pkgdir}" "${_pypi_name}-${pkgver}-py3-none-any.whl"
-    {% else %}
+{%- else %}
     cd "${srcdir}/wheel_extract"
     python -m installer --destdir="${pkgdir}" .
-    {% endif %}
-{% else %}
+{%- endif %}
+{%- else %}
 package() {
     cd "${srcdir}"
     python -m build --wheel --no-isolation || true
     python -m installer --destdir="${pkgdir}" .
-{% endif %}
-
-    {% if license_file %}
+{%- endif %}
+{%- if license_file %}
     install -Dm644 "${srcdir}/{{ license_file }}" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
-    {% endif %}
-
-    {% if systemd_service %}
+{%- endif %}
+{%- if systemd_service %}
     install -Dm644 "${srcdir}/{{ systemd_service }}" "${pkgdir}/usr/lib/systemd/user/{{ systemd_service }}"
-    {% endif %}
-
-    {% if desktop %}
+{%- endif %}
+{%- if desktop %}
     if [ -d "${pkgdir}/usr/share/applications" ]; then
         find "${pkgdir}/usr/share/applications" -name "*.desktop" -exec sed -i "s|Exec=.*|Exec={{ binary_name }} %U|" {} \;
     fi
-    {% endif %}
-
-    {% if icons %}
+{%- endif %}
+{%- if icons %}
     if [ -d "${pkgdir}/usr/share/icons" ]; then
         find "${pkgdir}/usr/share/icons" -type d -exec chmod 755 {} +
         find "${pkgdir}/usr/share/icons" -type f -exec chmod 644 {} +
     fi
-    {% endif %}
+{%- endif %}
 }

@@ -26,6 +26,8 @@ def select_template(cfg: dict[str, Any]) -> str:
         return "templates/pypi.PKGBUILD.j2"
     if cfg["type"] == "npm":
         return "templates/npm.PKGBUILD.j2"
+    if cfg["type"] == "binary":
+        return "templates/binary.PKGBUILD.j2"
     raise RuntimeError("Unknown package type")
 
 
@@ -144,7 +146,13 @@ def build(pkgfile: str) -> dict[str, str] | None:
         print(f"[{pkgname}] 📦 Last known version: {last_version}")
 
     try:
-        tag, url, asset_id = fetch(cfg)
+        fetch_result = fetch(cfg)
+        # Handle both 3-tuple (old) and 4-tuple (new with sha256)
+        if len(fetch_result) == 4:
+            tag, url, asset_id, upstream_sha256 = fetch_result
+        else:
+            tag, url, asset_id = fetch_result
+            upstream_sha256 = None
 
         print(f"[{pkgname}] 🌐 Fetched upstream version: {tag}")
         print(f"[{pkgname}] 🔗 Download URL: {url}")
@@ -163,8 +171,13 @@ def build(pkgfile: str) -> dict[str, str] | None:
         else:
             print(f"[{pkgname}] 🔄 VERSION CHANGE: {last_version} → {tag}")
 
-        print(f"[{pkgname}] 📥 Calculating SHA256 checksum...")
-        checksum = sha256(url)
+        # Use upstream SHA256 if available, otherwise calculate
+        if upstream_sha256:
+            print(f"[{pkgname}] ✅ Using upstream SHA256: {upstream_sha256}")
+            checksum = upstream_sha256
+        else:
+            print(f"[{pkgname}] 📥 Calculating SHA256 checksum...")
+            checksum = sha256(url)
 
         tmpl_path = select_template(cfg)
         if not Path(tmpl_path).is_absolute():
@@ -191,8 +204,20 @@ def build(pkgfile: str) -> dict[str, str] | None:
         # Pass appimage config fields individually
         appimage_config = cfg.get("appimage", {})
 
+        # Pass binary config
+        binary_config = cfg.get("binary", {})
+
+        # Get extract method from upstream config
+        upstream_extract = (cfg.get("upstream", {}) or {}).get("extract", "none")
+
         print(f"[{pkgname}] 🎨 Rendering PKGBUILD template...")
-        cfg_copy = {k: v for k, v in cfg.items() if k not in ("pypi", "npm", "appimage", "debian", "upstream", "provides", "license_file", "systemd_service", "shell_wrapper")}
+        cfg_copy = {k: v for k, v in cfg.items() if k not in ("pypi", "npm", "appimage", "debian", "binary", "upstream", "provides", "license_file", "systemd_service", "shell_wrapper")}
+        # Ensure these fields are always available with defaults
+        cfg_copy.setdefault("depends", [])
+        cfg_copy.setdefault("makedepends", [])
+        cfg_copy.setdefault("options", [])
+        cfg_copy.setdefault("conflicts", [])
+        cfg_copy.setdefault("provides", [])
         rendered = tmpl.render(
             **cfg_copy,
             pkgver=pkgver,
@@ -202,15 +227,15 @@ def build(pkgfile: str) -> dict[str, str] | None:
             deb_version=deb_version,
             extract_method=extract_method,
             appimage_name=appimage_config.get("appimage_name", f"{appimage_config.get('binary_name', 'app')}.AppImage"),
-            binary_name=cfg.get("npm", {}).get("binary_name", "") or appimage_config.get("binary_name", ""),
+            binary_name=cfg.get("npm", {}).get("binary_name", "") or appimage_config.get("binary_name", "") or binary_config.get("binary_name", ""),
             desktop=appimage_config.get("desktop", False),
             icons=appimage_config.get("icons", False),
             package_manager=(cfg.get("pypi", {}) or {}).get("package_manager", "pip") if cfg.get("type") == "pypi" else (cfg.get("npm", {}) or {}).get("package_manager", "npm"),
             pypi_name=cfg.get("upstream", {}).get("pypi_name", ""),
             npm_name=cfg.get("upstream", {}).get("npm_name", ""),
-            provides=cfg.get("provides", []),
             license_file=cfg.get("license_file", ""),
-            systemd_service=cfg.get("systemd_service", "")
+            systemd_service=cfg.get("systemd_service", ""),
+            extract=upstream_extract
         )
 
         os.makedirs(outdir, exist_ok=True)

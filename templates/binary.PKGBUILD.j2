@@ -1,0 +1,45 @@
+pkgname={{ pkgname }}
+pkgver={{ pkgver }}
+pkgrel=1
+pkgdesc="{{ pkgdesc }}"
+arch=({{ arch | join(' ') }})
+url="{{ url }}"
+license=({{ license | join(' ') }})
+
+depends=({{ depends | join(' ') }})
+{%- if makedepends %}
+makedepends=({{ makedepends | join(' ') }})
+{%- endif %}
+{%- if options %}
+options=({{ options | join(' ') }})
+{%- else %}
+options=(!strip !debug)
+{%- endif %}
+{%- if conflicts %}
+conflicts=({{ conflicts | join(' ') }})
+{%- endif %}
+{%- if provides %}
+provides=({{ provides | join(' ') }})
+{%- endif %}
+
+source=("{{ download_url }}")
+sha256sums=('{{ sha256 }}')
+
+prepare() {
+{%- if extract == 'tar' %}
+    tar -xf "${source}"
+{%- elif extract == 'zip' %}
+    unzip -q "${source}"
+{%- endif %}
+}
+
+package() {
+{%- if extract != 'none' and binary_name %}
+    install -Dm755 "{{ binary_name }}" "${pkgdir}/usr/bin/{{ binary_name }}"
+{%- else %}
+    install -Dm644 "${source}" "${pkgdir}/opt/${pkgname}/${pkgname}"
+{%- endif %}
+{%- if license_file %}
+    install -Dm644 "{{ license_file }}" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+{%- endif %}
+}
