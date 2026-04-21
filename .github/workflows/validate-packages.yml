@@ -22,7 +22,7 @@ jobs:
         uses: astral-sh/setup-uv@v4
 
       - name: Install deps
-        run: uv pip install --system pyyaml jsonschema
+        run: uv pip install --system --break-system-packages pyyaml jsonschema
 
       - name: Validate package YAML files
         run: python scripts/validate.py
