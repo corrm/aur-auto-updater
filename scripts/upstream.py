@@ -167,7 +167,12 @@ def fetch(cfg: dict[str, Any]) -> tuple[str | None, str, int | None]:
     print(f"\n[Upstream] 🌍 Fetching from provider: {provider}")
 
     if provider == "github":
-        return github_latest(upstream["repo"], upstream["asset_regex"])
+        asset_regex = upstream["asset_regex"]
+        # Interpolate ${arch} with actual architecture
+        arch = cfg.get("arch", ["any"])
+        arch = arch[0] if isinstance(arch, list) else arch
+        asset_regex = asset_regex.replace("${arch}", arch)
+        return github_latest(upstream["repo"], asset_regex)
 
     if provider == "pypi":
         pypi_name = upstream.get("pypi_name", cfg["pkgname"])
