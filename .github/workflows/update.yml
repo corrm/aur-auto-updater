@@ -19,7 +19,7 @@ jobs:
           pacman -Syu --noconfirm --needed sudo git base-devel openssh python python-pip
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v8
         with:
           enable-default-python: true
 
