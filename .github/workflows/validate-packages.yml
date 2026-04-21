@@ -20,11 +20,14 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
-        with:
-          enable-default-python: true
 
-      - name: Install deps
-        run: uv pip install pyyaml jsonschema
+      - name: Create venv and install deps
+        run: |
+          uv venv
+          source .venv/bin/activate
+          uv pip install pyyaml jsonschema
 
       - name: Validate package YAML files
-        run: python scripts/validate.py
+        run: |
+          source .venv/bin/activate
+          python scripts/validate.py
