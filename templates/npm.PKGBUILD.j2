@@ -1,0 +1,90 @@
+pkgname={{ pkgname }}
+pkgver={{ pkgver }}
+pkgrel=1
+pkgdesc="{{ pkgdesc }}"
+arch=({{ arch | join(' ') }})
+url="{{ url }}"
+license=({{ license | join(' ') }})
+
+{% set pm = package_manager | default('npm') %}
+{% if pm == 'bun' %}
+{% set builtin_deps = ['bun'] %}
+makedepends=({{ makedepends | join(' ') }} bun)
+{% else %}
+{% set builtin_deps = ['nodejs', 'npm'] %}
+makedepends=({{ makedepends | join(' ') }})
+{% endif %}
+
+{% set user_deps = depends or [] %}{% set all_depends = (user_deps + builtin_deps) | unique %}
+depends=({{ all_depends | join(' ') }})
+
+options=({{ options | join(' ') }})
+
+{% if conflicts %}
+conflicts=({{ conflicts | join(' ') }})
+{% endif %}
+{% if provides %}
+provides=({{ provides | join(' ') }})
+{% endif %}
+
+{% set _npm_name = npm_name if npm_name else pkgname %}
+_npm_name="{{ _npm_name }}"
+source=("{{ download_url }}")
+sha256sums=('{{ sha256 }}')
+noextract=("${_npm_name}-${pkgver}.tgz")
+
+prepare() {
+    mkdir -p "${srcdir}/npm_pkg"
+    cd "${srcdir}/npm_pkg"
+    tar -xzf "../${_npm_name}-${pkgver}.tgz"
+}
+
+package() {
+    {% if pm == 'bun' %}
+    cd "${srcdir}/npm_pkg/package"
+    mkdir -p "${srcdir}/npm-cache"
+    bun install --cache "${srcdir}/npm-cache" --global --prefix "${pkgdir}/usr"
+    {% else %}
+    cd "${srcdir}/npm_pkg/package"
+    mkdir -p "${srcdir}/npm-cache"
+    npm install --cache "${srcdir}/npm-cache" -g --prefix "${pkgdir}/usr"
+    {% endif %}
+
+    find "${pkgdir}" -name "package.json" -print0 | xargs -r -0 sed -i '/_where/d'
+
+    local tmppackage="$(mktemp)"
+    local pkgjson
+    for pkgjson in $(find "${pkgdir}" -type f -name "package.json"); do
+        jq '.|=with_entries(select(.key|test("_.+")|not))' "$pkgjson" > "$tmppackage"
+        mv "$tmppackage" "$pkgjson"
+        chmod 644 "$pkgjson"
+    done
+
+    find "${pkgdir}" -type f -name "package.json" | while read -r pkgjson; do
+        local tmppackage="$(mktemp)"
+        jq 'del(.man)' "$pkgjson" > "$tmppackage"
+        mv "$tmppackage" "$pkgjson"
+        chmod 644 "$pkgjson"
+    done
+
+    {% if license_file %}
+    install -Dm644 "${srcdir}/{{ license_file }}" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+    {% endif %}
+
+    {% if systemd_service %}
+    install -Dm644 "${srcdir}/{{ systemd_service }}" "${pkgdir}/usr/lib/systemd/user/{{ systemd_service }}"
+    {% endif %}
+
+    {% if desktop %}
+    if [ -d "${pkgdir}/usr/share/applications" ]; then
+        find "${pkgdir}/usr/share/applications" -name "*.desktop" -exec sed -i "s|Exec=.*|Exec={{ binary_name }} %U|" {} \;
+    fi
+    {% endif %}
+
+    {% if icons %}
+    if [ -d "${pkgdir}/usr/share/icons" ]; then
+        find "${pkgdir}/usr/share/icons" -type d -exec chmod 755 {} +
+        find "${pkgdir}/usr/share/icons" -type f -exec chmod 644 {} +
+    fi
+    {% endif %}
+}

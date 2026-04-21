@@ -40,6 +40,67 @@ def github_latest(repo: str, asset_regex: str) -> tuple[str | None, str, int | N
     raise RuntimeError(f"No matching asset found (pattern: {asset_regex})")
 
 
+def pypi_latest(package_name: str) -> tuple[str | None, str, None]:
+    """Fetch latest version and download URL from PyPI.
+
+    Args:
+        package_name: PyPI package name
+
+    Returns:
+        Tuple of (version, download_url, None)
+
+    Raises:
+        RuntimeError: If package not found or fetch fails
+    """
+    print(f"  [PyPI] 📡 Fetching package info: {package_name}")
+    url = f"https://pypi.org/pypi/{package_name}/json"
+    r = requests.get(url, timeout=30)
+    r.raise_for_status()
+
+    data = r.json()
+    info = data["info"]
+    version = info["version"]
+
+    print(f"  [PyPI] 🏷️  Found version: {version}")
+
+    if info.get("urls"):
+        download_url = info["urls"][0]["filename"]
+        wheel_url = f"https://files.pythonhosted.org/packages/{download_url}"
+    else:
+        pypi_name = package_name.lower().replace("_", "-")
+        wheel_url = f"https://files.pythonhosted.org/packages/source/{pypi_name[0]}/{pypi_name}/{pypi_name}-{version}.tar.gz"
+
+    print(f"  [PyPI] ✅ Download URL: {wheel_url}")
+    return version, wheel_url, None
+
+
+def npm_latest(package_name: str) -> tuple[str | None, str, None]:
+    """Fetch latest version and download URL from npm.
+
+    Args:
+        package_name: npm package name
+
+    Returns:
+        Tuple of (version, download_url, None)
+
+    Raises:
+        RuntimeError: If package not found or fetch fails
+    """
+    print(f"  [npm] 📡 Fetching package info: {package_name}")
+    url = f"https://registry.npmjs.org/{package_name}/latest"
+    r = requests.get(url, timeout=30)
+    r.raise_for_status()
+
+    data = r.json()
+    version = data["version"]
+
+    print(f"  [npm] 🏷️  Found version: {version}")
+
+    tarball_url = data["dist"]["tarball"]
+    print(f"  [npm] ✅ Download URL: {tarball_url}")
+    return version, tarball_url, None
+
+
 def debian_latest(base_url: str, pkg_pattern: str) -> str | None:
     """Fetch latest Debian package version from package listing page.
 
@@ -107,6 +168,14 @@ def fetch(cfg: dict[str, Any]) -> tuple[str | None, str, int | None]:
 
     if provider == "github":
         return github_latest(upstream["repo"], upstream["asset_regex"])
+
+    if provider == "pypi":
+        pypi_name = upstream.get("pypi_name", cfg["pkgname"])
+        return pypi_latest(pypi_name)
+
+    if provider == "npm":
+        npm_name = upstream.get("npm_name", cfg["pkgname"])
+        return npm_latest(npm_name)
 
     if provider == "url":
         base_url = upstream["url"]

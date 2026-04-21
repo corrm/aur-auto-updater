@@ -14,11 +14,11 @@ depends:
 upstream:
   provider: github
   repo: superset-sh/superset
-  asset_regex: ".*AppImage$"
+  asset_regex: ".*-${arch}.AppImage$"
 
 type: appimage
 appimage:
-  appimage_name: "superset-${pkgver}-x86_64.AppImage"
+  appimage_name: "superset-${pkgver}-${arch}.AppImage"
   binary_name: superset-desktop
   desktop: true
   icons: true

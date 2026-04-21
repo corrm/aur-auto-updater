@@ -23,7 +23,9 @@
       "description": "Package backend type that determines build logic and required fields.",
       "enum": [
         "appimage",
-        "debian"
+        "debian",
+        "pypi",
+        "npm"
       ]
     },
     "pkgdesc": {
@@ -50,7 +52,7 @@
     },
     "depends": {
       "type": "array",
-      "description": "Runtime dependencies for the package.",
+      "description": "Runtime dependencies for the package. Built-in dependencies are added automatically based on package manager.",
       "items": {
         "type": "string"
       }
@@ -88,7 +90,9 @@
           "description": "Upstream provider type used for version resolution.",
           "enum": [
             "github",
-            "url"
+            "url",
+            "pypi",
+            "npm"
           ]
         },
         "repo": {
@@ -102,6 +106,14 @@
         "asset_regex": {
           "type": "string",
           "description": "Regex used to match release assets from upstream distributions."
+        },
+        "pypi_name": {
+          "type": "string",
+          "description": "PyPI package name (when provider is 'pypi'). May differ from pkgname."
+        },
+        "npm_name": {
+          "type": "string",
+          "description": "npm package name (when provider is 'npm'). May differ from pkgname."
         }
       }
     },
@@ -145,6 +157,64 @@
           ]
         }
       }
+    },
+    "pypi": {
+      "type": "object",
+      "description": "PyPI-specific packaging configuration.",
+      "properties": {
+        "package_manager": {
+          "type": "string",
+          "description": "Package manager to use for installation.",
+          "enum": [
+            "pip",
+            "uv"
+          ],
+          "default": "pip"
+        },
+        "build_backend": {
+          "type": "string",
+          "description": "Build backend for PEP 517 builds.",
+          "enum": [
+            "pep517",
+            "setuptools"
+          ],
+          "default": "pep517"
+        }
+      }
+    },
+    "npm": {
+      "type": "object",
+      "description": "npm-specific packaging configuration.",
+      "properties": {
+        "package_manager": {
+          "type": "string",
+          "description": "Package manager to use for installation.",
+          "enum": [
+            "npm",
+            "bun"
+          ],
+          "default": "npm"
+        },
+        "global_bin": {
+          "type": "string",
+          "description": "The name of the global binary executable exposed in /usr/bin."
+        }
+      }
+    },
+    "provides": {
+      "type": "array",
+      "description": "Package names this package provides (virtual packages).",
+      "items": {
+        "type": "string"
+      }
+    },
+    "license_file": {
+      "type": "string",
+      "description": "License file to install (relative to source archive). Default: LICENSE"
+    },
+    "systemd_service": {
+      "type": "string",
+      "description": "Systemd service file to install (relative to source archive)."
     }
   },
   "oneOf": [
@@ -162,6 +232,20 @@
       "properties": {
         "type": {
           "const": "debian"
+        }
+      }
+    },
+    {
+      "properties": {
+        "type": {
+          "const": "pypi"
+        }
+      }
+    },
+    {
+      "properties": {
+        "type": {
+          "const": "npm"
         }
       }
     }

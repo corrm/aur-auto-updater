@@ -22,6 +22,10 @@ def select_template(cfg: dict[str, Any]) -> str:
         return "templates/appimage.PKGBUILD.j2"
     if cfg["type"] == "debian":
         return "templates/debian.PKGBUILD.j2"
+    if cfg["type"] == "pypi":
+        return "templates/pypi.PKGBUILD.j2"
+    if cfg["type"] == "npm":
+        return "templates/npm.PKGBUILD.j2"
     raise RuntimeError("Unknown package type")
 
 
@@ -49,6 +53,18 @@ def save_state(path: str, state: dict[str, Any]) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     state["last_updated"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     json.dump(state, open(path, "w"), indent=2)
+
+
+def _process_shell_wrapper(cfg: dict[str, Any]) -> dict[str, str] | None:
+    if not cfg:
+        return None
+    name = cfg.get("name", "")
+    entry = cfg.get("entry", "")
+    interpreter = cfg.get("interpreter", "bun")
+    if not name or not entry:
+        return None
+    content = f'#!/bin/bash\nexec {interpreter} run {entry} "$@"'
+    return {"name": name, "content": content}
 
 
 def sha256(url: str) -> str:
@@ -108,8 +124,9 @@ def build(pkgfile: str) -> dict[str, str] | None:
     print(f"[{pkgname}] Package name: {pkgname}")
     print(f"[{pkgname}] Type: {cfg.get('type', 'unknown')}")
 
-    state_path = f"state/{pkgname}.json"
-    state = load_state(state_path, pkgname)
+    project_root = Path(__file__).parent.parent
+    state_path = project_root / "state" / f"{pkgname}.json"
+    state = load_state(str(state_path), pkgname)
 
     # Check if package exists in AUR (not just local state)
     print(f"[{pkgname}] 🔍 Checking AUR existence...")
@@ -150,6 +167,12 @@ def build(pkgfile: str) -> dict[str, str] | None:
         checksum = sha256(url)
 
         tmpl_path = select_template(cfg)
+        if not Path(tmpl_path).is_absolute():
+            project_root = Path(__file__).parent.parent
+            tmpl_path = project_root / tmpl_path
+            outdir = project_root / "build" / pkgname
+        else:
+            outdir = Path("build") / pkgname
         print(f"[{pkgname}] 📝 Using template: {tmpl_path}")
 
         tmpl = Template(Path(tmpl_path).read_text())
@@ -169,24 +192,30 @@ def build(pkgfile: str) -> dict[str, str] | None:
         appimage_config = cfg.get("appimage", {})
 
         print(f"[{pkgname}] 🎨 Rendering PKGBUILD template...")
+        cfg_copy = {k: v for k, v in cfg.items() if k not in ("pypi", "npm", "appimage", "debian", "upstream", "provides", "license_file", "systemd_service", "shell_wrapper")}
         rendered = tmpl.render(
-            **cfg,
+            **cfg_copy,
             pkgver=pkgver,
             download_url=url,
             sha256=checksum,
             debian_config=debian_config,
             deb_version=deb_version,
             extract_method=extract_method,
-            appimage_name=appimage_config.get("appimage_name", ""),
-            binary_name=appimage_config.get("binary_name", ""),
+            appimage_name=appimage_config.get("appimage_name", f"{appimage_config.get('binary_name', 'app')}.AppImage"),
+            binary_name=cfg.get("npm", {}).get("binary_name", "") or appimage_config.get("binary_name", ""),
             desktop=appimage_config.get("desktop", False),
-            icons=appimage_config.get("icons", False)
+            icons=appimage_config.get("icons", False),
+            package_manager=(cfg.get("pypi", {}) or {}).get("package_manager", "pip") if cfg.get("type") == "pypi" else (cfg.get("npm", {}) or {}).get("package_manager", "npm"),
+            pypi_name=cfg.get("upstream", {}).get("pypi_name", ""),
+            npm_name=cfg.get("upstream", {}).get("npm_name", ""),
+            provides=cfg.get("provides", []),
+            license_file=cfg.get("license_file", ""),
+            systemd_service=cfg.get("systemd_service", "")
         )
 
-        outdir = f"build/{pkgname}"
         os.makedirs(outdir, exist_ok=True)
 
-        pkgbuild_path = f"{outdir}/PKGBUILD"
+        pkgbuild_path = outdir / "PKGBUILD"
         Path(pkgbuild_path).write_text(rendered)
         print(f"[{pkgname}] ✅ Generated PKGBUILD at: {pkgbuild_path}")
 
