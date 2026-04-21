@@ -40,10 +40,13 @@ package() {
     cd "${srcdir}"
 
     {% if pm == 'bun' %}
-    bun install --cache "${srcdir}/npm-cache" --global --prefix "${pkgdir}/usr" --ignore-scripts "{{ _npm_name }}-${pkgver}.tgz"
+    bun install --cache "${srcdir}/npm-cache" --global --prefix "${pkgdir}/usr" "{{ _npm_name }}-${pkgver}.tgz"
     {% else %}
-    npm install -g --prefix "${pkgdir}/usr" --cache "${srcdir}/npm-cache" --ignore-scripts "{{ _npm_name }}-${pkgver}.tgz"
+    npm install -g --prefix "${pkgdir}/usr" --cache "${srcdir}/npm-cache" "{{ _npm_name }}-${pkgver}.tgz"
     {% endif %}
+
+    # Fix permissions that sometimes break module resolution
+    find "${pkgdir}/usr/lib/node_modules" -type d -exec chmod 755 {} +
 
     # Fix package.json files
     find "${pkgdir}" -name "package.json" -print0 | xargs -r -0 sed -i '/_where/d'
