@@ -42,6 +42,13 @@ prepare() {
 package() {
     cd "${srcdir}/npm_pkg/package"
 
+    # Install dependencies (skip postinstall scripts)
+    {% if pm == 'bun' %}
+    bun install --ignore-scripts
+    {% else %}
+    npm install --ignore-scripts
+    {% endif %}
+
     # Install package to staging directory
     local staging_lib="${pkgdir}/usr/lib/node_modules/{{ pkgname }}"
     install -dm755 "${staging_lib}"
