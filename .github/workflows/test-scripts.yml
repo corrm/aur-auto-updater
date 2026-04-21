@@ -18,22 +18,15 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    container:
-      image: archlinux
-      options: --privileged
     steps:
       - uses: actions/checkout@v6
-
-      - name: Install dependencies
-        run: |
-          pacman -Syu --noconfirm --needed python
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
 
       - name: Install Python and dependencies
         run: |
-          uv pip install --system pytest pyyaml requests jsonschema jinja2
+          uv pip install pytest pyyaml requests jsonschema jinja2
 
       - name: Run tests
         run: |
