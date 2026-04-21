@@ -27,9 +27,9 @@ sha256sums=('{{ sha256 }}')
 
 prepare() {
 {%- if extract == 'tar' %}
-    tar -xf "${source}"
+    tar -xf "${srcdir}/$(basename "${source}")"
 {%- elif extract == 'zip' %}
-    unzip -q "${source}"
+    unzip -q "${srcdir}/$(basename "${source}")"
 {%- endif %}
 }
 
@@ -37,7 +37,7 @@ package() {
 {%- if extract != 'none' and binary_name %}
     install -Dm755 "{{ binary_name }}" "${pkgdir}/usr/bin/{{ binary_name }}"
 {%- else %}
-    install -Dm644 "${source}" "${pkgdir}/opt/${pkgname}/${pkgname}"
+    install -Dm644 "${srcdir}/$(basename "${source}")" "${pkgdir}/opt/${pkgname}/${pkgname}"
 {%- endif %}
 {%- if license_file %}
     install -Dm644 "{{ license_file }}" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
