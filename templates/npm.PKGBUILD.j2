@@ -48,19 +48,20 @@ package() {
 
     install -dm755 "${pkgdir}/usr/bin"
 
+    local npm_lib_staging="${pkgdir}/usr/lib/node_modules/{{ pkgname }}"
     local npm_lib_abs="/usr/lib/node_modules/{{ pkgname }}"
     if [ -f package.json ] && [ -n "$(jq -r '.bin // {}' package.json)" ]; then
         jq -r '.bin | to_entries[] | "\(.key)=\(.value)"' package.json | while read -r line; do
             local bin_name="${line%%=*}"
             local bin_path="${line##*=}"
             ln -s "${npm_lib_abs}/${bin_path}" "${pkgdir}/usr/bin/${bin_name}"
-            chmod +x "${npm_lib_abs}/${bin_path}"
+            chmod +x "${npm_lib_staging}/${bin_path}"
         done
     else
         {% if binary_name %}
         if [ -f "bin/{{ binary_name }}" ]; then
             ln -s "${npm_lib_abs}/bin/{{ binary_name }}" "${pkgdir}/usr/bin/{{ binary_name }}"
-            chmod +x "${npm_lib_abs}/bin/{{ binary_name }}"
+            chmod +x "${npm_lib_staging}/bin/{{ binary_name }}"
         fi
         {% endif %}
     fi
