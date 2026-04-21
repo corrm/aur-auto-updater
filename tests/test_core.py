@@ -294,30 +294,31 @@ class TestEdgeCases:
 
 
 class TestAssetRegexInterpolation:
-    """Tests for ${arch} and ${pkgver} interpolation in asset_regex."""
+    """Tests for ${arch}, ${pkgver}, ${pkgname} interpolation in asset_regex."""
 
-    def test_arch_interpolation_single(self) -> None:
-        """Test ${arch} interpolation with single arch string"""
-        arch = "x86_64"
+    def test_interpolate_dict_arch(self) -> None:
+        """Test generic dict-based interpolation for arch"""
+        interpolate = {"arch": "x86_64", "pkgname": "myapp"}
         asset_regex = ".*-${arch}.AppImage$"
-        result = asset_regex.replace("${arch}", arch)
-        assert result == ".*-x86_64.AppImage$"
+        for key, value in interpolate.items():
+            asset_regex = asset_regex.replace(f"${{{key}}}", value)
+        assert asset_regex == ".*-x86_64.AppImage$"
 
-    def test_arch_interpolation_list(self) -> None:
-        """Test ${arch} interpolation with arch list"""
-        arch = ["x86_64", "aarch64"]
-        arch_value = arch[0] if isinstance(arch, list) else arch
-        asset_regex = ".*-${arch}.AppImage$"
-        result = asset_regex.replace("${arch}", arch_value)
-        assert result == ".*-x86_64.AppImage$"
+    def test_interpolate_dict_multiple(self) -> None:
+        """Test generic dict-based interpolation with multiple vars"""
+        interpolate = {"arch": "aarch64", "pkgname": "myapp", "pkgver": "2.0.0"}
+        asset_regex = "${pkgname}-${pkgver}-${arch}.AppImage$"
+        for key, value in interpolate.items():
+            asset_regex = asset_regex.replace(f"${{{key}}}", value)
+        assert asset_regex == "myapp-2.0.0-aarch64.AppImage$"
 
-    def test_pkgver_interpolation(self) -> None:
-        """Test ${pkgver} interpolation in asset_regex"""
-        tag = "1.5.6"
-        asset_regex = "app-${pkgver}-${arch}.AppImage$"
-        result = asset_regex.replace("${pkgver}", tag)
-        result = result.replace("${arch}", "x86_64")
-        assert result == "app-1.5.6-x86_64.AppImage$"
+    def test_interpolate_dict_pkgname(self) -> None:
+        """Test ${pkgname} interpolation"""
+        interpolate = {"pkgname": "superset-bin"}
+        asset_regex = "${pkgname}-${arch}.AppImage$"
+        for key, value in interpolate.items():
+            asset_regex = asset_regex.replace(f"${{{key}}}", value)
+        assert asset_regex == "superset-bin-${arch}.AppImage$"
 
     def test_pkgver_from_github_tag(self) -> None:
         """Test extracting pkgver from GitHub tag format"""
@@ -327,7 +328,8 @@ class TestAssetRegexInterpolation:
 
     def test_no_interpolation_when_not_present(self) -> None:
         """Test asset_regex unchanged when no placeholders"""
+        interpolate = {"arch": "x86_64", "pkgname": "myapp", "pkgver": "1.0.0"}
         asset_regex = ".*AppImage$"
-        result = asset_regex.replace("${pkgver}", "1.0.0")
-        result = result.replace("${arch}", "x86_64")
-        assert result == ".*AppImage$"
+        for key, value in interpolate.items():
+            asset_regex = asset_regex.replace(f"${{{key}}}", value)
+        assert asset_regex == ".*AppImage$"

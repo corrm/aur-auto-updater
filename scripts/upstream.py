@@ -8,12 +8,13 @@ from typing import Any
 import requests  # type: ignore[import-untyped]
 
 
-def github_latest(repo: str, asset_regex: str) -> tuple[str | None, str, int | None]:
+def github_latest(repo: str, asset_regex: str, interpolate: dict[str, str] | None = None) -> tuple[str | None, str, int | None]:
     """Fetch latest release info from GitHub.
 
     Args:
         repo: GitHub repository in format 'owner/repo'
-        asset_regex: Regex pattern to match asset name (may include ${pkgver}, ${arch})
+        asset_regex: Regex pattern to match asset name (may include ${var} placeholders)
+        interpolate: Optional dict of {var_name: value} for interpolation (e.g., {arch: x86_64})
 
     Returns:
         Tuple of (tag_name or None, download_url, asset_id or None)
@@ -32,10 +33,14 @@ def github_latest(repo: str, asset_regex: str) -> tuple[str | None, str, int | N
 
     print(f"  [GitHub] 🏷️  Found tag: {tag} (from {raw_tag})")
 
-    # Interpolate ${pkgver} if present in asset_regex
-    if "${pkgver}" in asset_regex:
-        asset_regex = asset_regex.replace("${pkgver}", tag)
-        print(f"  [GitHub] 🔄 Interpolated asset_regex: {asset_regex}")
+    # Interpolate placeholders from dict
+    if interpolate:
+        for key, value in interpolate.items():
+            placeholder = f"${{{key}}}"
+            if placeholder in asset_regex:
+                asset_regex = asset_regex.replace(placeholder, value)
+        if interpolate:
+            print(f"  [GitHub] 🔄 Interpolated asset_regex: {asset_regex}")
 
     for a in data["assets"]:
         if re.match(asset_regex, a["name"]):
@@ -173,11 +178,12 @@ def fetch(cfg: dict[str, Any]) -> tuple[str | None, str, int | None]:
 
     if provider == "github":
         asset_regex = upstream["asset_regex"]
-        # Interpolate ${arch} with actual architecture
+        # Build interpolation dict from cfg
+        interpolate: dict[str, str] = {}
         arch = cfg.get("arch", ["any"])
-        arch = arch[0] if isinstance(arch, list) else arch
-        asset_regex = asset_regex.replace("${arch}", arch)
-        return github_latest(upstream["repo"], asset_regex)
+        interpolate["arch"] = arch[0] if isinstance(arch, list) else arch
+        interpolate["pkgname"] = cfg.get("pkgname", "")
+        return github_latest(upstream["repo"], asset_regex, interpolate)
 
     if provider == "pypi":
         pypi_name = upstream.get("pypi_name", cfg["pkgname"])
