@@ -31,42 +31,24 @@ provides=({{ provides | join(' ') }})
 {%- endif %}
 
 {%- set _pypi_name = pypi_name if pypi_name else pkgname %}
-_pypi_name="{{ _pypi_name }}"
 source=("{{ download_url }}")
 sha256sums=('{{ sha256 }}')
 
-{%- if '.whl' in download_url %}
-noextract=("${_pypi_name}-${pkgver}-py3-none-any.whl")
-
-{%- if pm == 'uv' %}
-prepare() {
-    mkdir -p "${srcdir}/wheel_extract"
-    cd "${srcdir}/wheel_extract"
-    unzip -q "../${_pypi_name}-${pkgver}-py3-none-any.whl" -d .
+build() {
+    cd "${srcdir}/${_pypi_name}-${pkgver}"
+    python -m build --wheel --no-isolation
 }
-{%- endif %}
 
 package() {
-{%- if pm == 'pip' %}
-    cd "${srcdir}"
-    python -m installer --destdir="${pkgdir}" --prefix=/usr "${_pypi_name}-${pkgver}-py3-none-any.whl"
-{%- else %}
-    cd "${srcdir}/wheel_extract"
-    python -m installer --destdir="${pkgdir}" --prefix=/usr .
-{%- endif %}
-{%- else %}
-package() {
-    cd "${srcdir}"
-    python -m build --wheel --no-isolation || true
-    python -m installer --destdir="${pkgdir}" --prefix=/usr .
-{%- endif %}
+    cd "${srcdir}/${_pypi_name}-${pkgver}"
+    python -m installer --destdir="${pkgdir}" --prefix=/usr dist/*.whl
 {%- if install_files %}
 {%- for file in install_files %}
-    install -Dm{{ file.mode }} "${srcdir}/{{ file.source }}" "${pkgdir}{{ file.dest }}"
+    install -Dm{{ file.mode }} "{{ file.source }}" "${pkgdir}{{ file.dest }}"
 {%- endfor %}
 {%- endif %}
 {%- if systemd_service %}
-    install -Dm644 "${srcdir}/{{ systemd_service }}" "${pkgdir}/usr/lib/systemd/user/{{ systemd_service }}"
+    install -Dm644 "${srcdir}/${_pypi_name}-${pkgver}/{{ systemd_service }}" "${pkgdir}/usr/lib/systemd/user/{{ systemd_service }}"
 {%- endif %}
 {%- if desktop %}
     if [ -d "${pkgdir}/usr/share/applications" ]; then
