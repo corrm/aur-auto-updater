@@ -17,3 +17,11 @@ pypi:
 
 provides:
   - graphify
+
+install_files:
+  - source: LICENSE
+    dest: /usr/share/licenses/graphify-bin
+    mode: "644"
+  - source: README.md
+    dest: /usr/share/doc/graphify-bin
+    mode: "644"
