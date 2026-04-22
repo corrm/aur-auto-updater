@@ -49,16 +49,16 @@ prepare() {
 package() {
 {%- if pm == 'pip' %}
     cd "${srcdir}"
-    python -m installer --destdir="${pkgdir}" "${_pypi_name}-${pkgver}-py3-none-any.whl"
+    python -m installer --destdir="${pkgdir}" --prefix=/usr "${_pypi_name}-${pkgver}-py3-none-any.whl"
 {%- else %}
     cd "${srcdir}/wheel_extract"
-    python -m installer --destdir="${pkgdir}" .
+    python -m installer --destdir="${pkgdir}" --prefix=/usr .
 {%- endif %}
 {%- else %}
 package() {
     cd "${srcdir}"
     python -m build --wheel --no-isolation || true
-    python -m installer --destdir="${pkgdir}" .
+    python -m installer --destdir="${pkgdir}" --prefix=/usr .
 {%- endif %}
 {%- if install_files %}
 {%- for file in install_files %}
