@@ -1,0 +1,19 @@
+aur_repo: graphifyy
+pkgname: graphifyy
+pkgdesc: AI coding assistant skill - turn any folder into a queryable knowledge graph
+url: https://graphify.net
+arch: [x86_64]
+license: [MIT]
+
+depends: ["python>=3.10"]
+
+upstream:
+  provider: pypi
+  pypi_name: graphifyy
+
+type: pypi
+pypi:
+  package_manager: pip
+
+provides:
+  - graphify
