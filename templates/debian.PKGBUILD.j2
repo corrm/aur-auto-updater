@@ -6,7 +6,7 @@ arch=({{ arch | join(' ') }})
 url="{{ url }}"
 license=({{ license | join(' ') }})
 
-depends=({{ depends | join(' ') }})
+depends=({% for d in depends %}"{{ d }}"{% if not loop.last %} {% endif %}{% endfor %})
 {%- set method = extract_method | default('ar') %}
 {%- if method == 'dpkg' %}
 {%- set makedepends_list = makedepends + ['dpkg'] %}
@@ -14,13 +14,13 @@ depends=({{ depends | join(' ') }})
 {%- set makedepends_list = makedepends %}
 {%- endif %}
 {%- if makedepends_list %}
-makedepends=({{ makedepends_list | join(' ') }})
+makedepends=({% for d in makedepends_list %}"{{ d }}"{% if not loop.last %} {% endif %}{% endfor %})
 {%- endif %}
 {%- if options %}
 options=({{ options | join(' ') }})
 {%- endif %}
 {%- if conflicts %}
-conflicts=({{ conflicts | join(' ') }})
+conflicts=({% for d in conflicts %}"{{ d }}"{% if not loop.last %} {% endif %}{% endfor %})
 {%- endif %}
 
 source=("{{ download_url }}")

@@ -11,21 +11,21 @@ license=({{ license | join(' ') }})
 {%- set builtin_deps = ['bun'] %}
 {%- set makedepends_list = makedepends + ['bun', 'jq', 'findutils'] %}
 {%- else %}
-{%- set builtin_deps = ['nodejs'] %}
+{%- set builtin_deps = ['nodejs', 'npm'] %}
 {%- set makedepends_list = makedepends + ['npm', 'jq', 'findutils'] %}
 {%- endif %}
 {%- if makedepends_list %}
-makedepends=({{ makedepends_list | join(' ') }})
+makedepends=({% for d in makedepends_list %}"{{ d }}"{% if not loop.last %} {% endif %}{% endfor %})
 {%- endif %}
 
 {%- set user_deps = depends or [] %}
 {%- set all_depends = (user_deps + builtin_deps) | unique %}
-depends=({{ all_depends | join(' ') }})
+depends=({% for d in all_depends %}"{{ d }}"{% if not loop.last %} {% endif %}{% endfor %})
 {%- if options %}
 options=({{ options | join(' ') }})
 {%- endif %}
 {%- if conflicts %}
-conflicts=({{ conflicts | join(' ') }})
+conflicts=({% for d in conflicts %}"{{ d }}"{% if not loop.last %} {% endif %}{% endfor %})
 {%- endif %}
 {%- if provides %}
 provides=({{ provides | join(' ') }})

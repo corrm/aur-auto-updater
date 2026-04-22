@@ -233,6 +233,7 @@ def build(pkgfile: str) -> dict[str, str] | None:
             package_manager=(cfg.get("pypi", {}) or {}).get("package_manager", "pip") if cfg.get("type") == "pypi" else (cfg.get("npm", {}) or {}).get("package_manager", "npm"),
             pypi_name=cfg.get("upstream", {}).get("pypi_name", ""),
             npm_name=cfg.get("upstream", {}).get("npm_name", ""),
+            _pypi_name=cfg.get("upstream", {}).get("pypi_name", cfg.get("pkgname", "")),
             install_files=cfg.get("install_files", []),
             systemd_service=cfg.get("systemd_service", ""),
             extract=upstream_extract

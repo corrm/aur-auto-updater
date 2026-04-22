@@ -15,32 +15,31 @@ license=({{ license | join(' ') }})
 {%- set makedepends_list = makedepends %}
 {%- endif %}
 {%- if makedepends_list %}
-makedepends=({{ makedepends_list | join(' ') }})
+makedepends=({% for d in makedepends_list %}"{{ d }}"{% if not loop.last %} {% endif %}{% endfor %})
 {%- endif %}
 
 {%- set all_depends = (depends or []) + builtin_deps %}
-depends=({{ all_depends | join(' ') }})
+depends=({% for d in all_depends %}"{{ d }}"{% if not loop.last %} {% endif %}{% endfor %})
 {%- if options %}
 options=({{ options | join(' ') }})
 {%- endif %}
 {%- if conflicts %}
-conflicts=({{ conflicts | join(' ') }})
+conflicts=({% for d in conflicts %}"{{ d }}"{% if not loop.last %} {% endif %}{% endfor %})
 {%- endif %}
 {%- if provides %}
 provides=({{ provides | join(' ') }})
 {%- endif %}
 
-{%- set _pypi_name = pypi_name if pypi_name else pkgname %}
 source=("{{ download_url }}")
 sha256sums=('{{ sha256 }}')
 
 build() {
-    cd "${srcdir}/${_pypi_name}-${pkgver}"
+    cd "${srcdir}/{{ _pypi_name }}-${pkgver}"
     python -m build --wheel --no-isolation
 }
 
 package() {
-    cd "${srcdir}/${_pypi_name}-${pkgver}"
+    cd "${srcdir}/{{ _pypi_name }}-${pkgver}"
     python -m installer --destdir="${pkgdir}" --prefix=/usr dist/*.whl
 {%- if install_files %}
 {%- for file in install_files %}
@@ -48,7 +47,7 @@ package() {
 {%- endfor %}
 {%- endif %}
 {%- if systemd_service %}
-    install -Dm644 "${srcdir}/${_pypi_name}-${pkgver}/{{ systemd_service }}" "${pkgdir}/usr/lib/systemd/user/{{ systemd_service }}"
+    install -Dm644 "{{ systemd_service }}" "${pkgdir}/usr/lib/systemd/user/{{ systemd_service }}"
 {%- endif %}
 {%- if desktop %}
     if [ -d "${pkgdir}/usr/share/applications" ]; then
