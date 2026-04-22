@@ -1,5 +1,5 @@
-aur_repo: graphify
-pkgname: graphify
+aur_repo: graphify-bin
+pkgname: graphify-bin
 pkgdesc: AI coding assistant skill - turn any folder into a queryable knowledge graph
 url: https://graphify.net
 arch: [x86_64]
