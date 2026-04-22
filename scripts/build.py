@@ -211,7 +211,7 @@ def build(pkgfile: str) -> dict[str, str] | None:
         upstream_extract = (cfg.get("upstream", {}) or {}).get("extract", "none")
 
         print(f"[{pkgname}] 🎨 Rendering PKGBUILD template...")
-        cfg_copy = {k: v for k, v in cfg.items() if k not in ("pypi", "npm", "appimage", "debian", "binary", "upstream", "provides", "install_files", "systemd_service", "shell_wrapper")}
+        cfg_copy = {k: v for k, v in cfg.items() if k not in ("pypi", "npm", "appimage", "debian", "binary", "upstream", "install_files", "systemd_service", "shell_wrapper")}
         # Ensure these fields are always available with defaults
         cfg_copy.setdefault("depends", [])
         cfg_copy.setdefault("makedepends", [])

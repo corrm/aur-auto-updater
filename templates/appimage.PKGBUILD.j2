@@ -18,6 +18,9 @@ options=(!strip !debug)
 {%- if conflicts %}
 conflicts=({% for d in conflicts %}"{{ d }}"{% if not loop.last %} {% endif %}{% endfor %})
 {%- endif %}
+{%- if provides %}
+provides=({{ provides | join(' ') }})
+{%- endif %}
 
 _appimage="{{ appimage_name }}"
 source=("${_appimage}::{{ download_url }}")
