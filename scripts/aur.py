@@ -181,7 +181,12 @@ def commit_and_push(repo_path: str, msg: str) -> None:
         raise subprocess.CalledProcessError(result.returncode, "git commit", output=result.stderr)
 
     print(f"  [AUR] 🚀 Pushing to AUR...")
-    subprocess.check_call(["git", "push"], cwd=repo_path)
+    result = subprocess.run(["git", "push"], cwd=repo_path, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"  [AUR] ❌ Git push failed!")
+        print(f"  [AUR] 📋 stderr: {result.stderr.strip()}")
+        print(f"  [AUR] 📋 stdout: {result.stdout.strip() if result.stdout.strip() else '(empty)'}")
+        raise subprocess.CalledProcessError(result.returncode, "git push", output=result.stderr, stderr=result.stderr)
 
 
 def publish(pkgname: str, build_dir: str = "build") -> dict[str, str]:
