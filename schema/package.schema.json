@@ -104,6 +104,20 @@
           "type": "string",
           "description": "Direct URL used when provider is url."
         },
+        "method": {
+          "type": "string",
+          "description": "HTTP method to use for URL requests (GET or HEAD). Default: GET",
+          "enum": ["GET", "HEAD"],
+          "default": "GET"
+        },
+        "response_header": {
+          "type": "string",
+          "description": "Response header to extract download URL from (e.g., 'Location'). If specified, follows redirect manually."
+        },
+        "version_pattern": {
+          "type": "string",
+          "description": "Regex pattern to extract version from the download URL. Should contain one capture group."
+        },
         "asset_regex": {
           "type": "string",
           "description": "Regex used to match release assets from upstream distributions."
@@ -128,7 +142,7 @@
         },
         "arch_map": {
           "type": "object",
-          "description": "Mapping from Arch architecture names to GitHub asset architecture names. E.g., {\"x86_64\": \"amd64\", \"aarch64\": \"arm64\"}.",
+          "description": "Mapping from Arch architecture names to asset architecture names. E.g., {\"x86_64\": \"amd64\", \"aarch64\": \"arm64\"}. Used with GitHub and URL providers.",
           "additionalProperties": {
             "type": "string"
           }

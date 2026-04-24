@@ -592,3 +592,97 @@ class TestInstallFiles:
             install_files=[{"source": "LICENSE", "dest": "/usr/share/licenses/test-pkg", "mode": "644"}]
         )
         assert 'install -Dm644 "LICENSE"' not in rendered
+
+
+class TestUrlProviderWithHeaders:
+    """Tests for URL provider with method and response_header options."""
+
+    def test_url_provider_method_default(self) -> None:
+        """Test that URL provider defaults to GET method"""
+        import json
+        with open('schema/package.schema.json', 'r') as f:
+            schema = json.load(f)
+        method_schema = schema['properties']['upstream']['properties']['method']
+        assert method_schema['default'] == 'GET'
+        assert 'GET' in method_schema['enum']
+        assert 'HEAD' in method_schema['enum']
+
+    def test_url_provider_response_header_exists(self) -> None:
+        """Test that response_header field exists in schema"""
+        import json
+        with open('schema/package.schema.json', 'r') as f:
+            schema = json.load(f)
+        assert 'response_header' in schema['properties']['upstream']['properties']
+
+    def test_url_provider_version_pattern_exists(self) -> None:
+        """Test that version_pattern field exists in schema"""
+        import json
+        with open('schema/package.schema.json', 'r') as f:
+            schema = json.load(f)
+        assert 'version_pattern' in schema['properties']['upstream']['properties']
+
+    def test_version_pattern_extraction(self) -> None:
+        """Test version extraction from URL using version_pattern"""
+        import re
+        url = "https://releases.warp.dev/stable/v0.2026.04.15.08.45.stable_04/warp-terminal-0.2026.04.15.08.45.stable_04-1-x86_64.pkg.tar.zst"
+        version_pattern = r'/v([^/]+)/'
+        version_match = re.search(version_pattern, url)
+        assert version_match is not None
+        assert version_match.group(1) == "0.2026.04.15.08.45.stable_04"
+
+    def test_version_pattern_extraction_simple(self) -> None:
+        """Test simple version extraction"""
+        import re
+        url = "https://example.com/releases/v1.2.3/file.tar.gz"
+        version_pattern = r'/v([^/]+)/'
+        version_match = re.search(version_pattern, url)
+        assert version_match is not None
+        assert version_match.group(1) == "1.2.3"
+
+
+class TestBinaryTemplateNoPrepare:
+    """Tests for binary template when extract=none (no prepare function)."""
+
+    def test_binary_template_no_prepare_when_extract_none(self) -> None:
+        """Test that prepare() function is omitted when extract=none"""
+        from jinja2 import Template
+        template = Template(open('templates/binary.PKGBUILD.j2').read())
+        rendered = template.render(
+            pkgname="test-pkg", pkgver="1.0", pkgrel="1",
+            pkgdesc="Test", arch=["x86_64"], url="https://test.com",
+            license=["MIT"], depends=[], makedepends=[], options=[],
+            conflicts=[], provides=[], download_url="https://test.tar.gz",
+            sha256="abc123", extract="none", binary_name="test",
+            install_files=[]
+        )
+        assert 'prepare()' not in rendered
+
+    def test_binary_template_has_prepare_when_extract_tar(self) -> None:
+        """Test that prepare() function is included when extract=tar"""
+        from jinja2 import Template
+        template = Template(open('templates/binary.PKGBUILD.j2').read())
+        rendered = template.render(
+            pkgname="test-pkg", pkgver="1.0", pkgrel="1",
+            pkgdesc="Test", arch=["x86_64"], url="https://test.com",
+            license=["MIT"], depends=[], makedepends=[], options=[],
+            conflicts=[], provides=[], download_url="https://test.tar.gz",
+            sha256="abc123", extract="tar", binary_name="test",
+            install_files=[]
+        )
+        assert 'prepare()' in rendered
+        assert 'tar -xf' in rendered
+
+    def test_binary_template_has_prepare_when_extract_zip(self) -> None:
+        """Test that prepare() function is included when extract=zip"""
+        from jinja2 import Template
+        template = Template(open('templates/binary.PKGBUILD.j2').read())
+        rendered = template.render(
+            pkgname="test-pkg", pkgver="1.0", pkgrel="1",
+            pkgdesc="Test", arch=["x86_64"], url="https://test.com",
+            license=["MIT"], depends=[], makedepends=[], options=[],
+            conflicts=[], provides=[], download_url="https://test.zip",
+            sha256="abc123", extract="zip", binary_name="test",
+            install_files=[]
+        )
+        assert 'prepare()' in rendered
+        assert 'unzip -q' in rendered

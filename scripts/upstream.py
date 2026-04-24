@@ -187,6 +187,9 @@ def debian_latest(base_url: str, pkg_pattern: str) -> str | None:
     return latest
 
 
+
+
+
 def fetch(cfg: dict[str, Any]) -> tuple[str | None, str, int | None]:
     """Fetch upstream version and download URL based on configuration.
 
@@ -223,6 +226,19 @@ def fetch(cfg: dict[str, Any]) -> tuple[str | None, str, int | None]:
 
     if provider == "url":
         base_url = upstream["url"]
+        method = upstream.get("method", "GET").upper()
+        response_header = upstream.get("response_header")
+        
+        # Support arch interpolation in URL (e.g., ${arch})
+        arch = cfg.get("arch", ["any"])
+        arch_value = arch[0] if isinstance(arch, list) else arch
+        
+        # Apply arch_map if provided
+        arch_map = upstream.get("arch_map", {})
+        if arch_value in arch_map:
+            arch_value = arch_map[arch_value]
+        
+        base_url = base_url.replace("${arch}", arch_value)
 
         # Check if this is a Debian package URL
         if "debian.org" in base_url or "debian.net" in base_url:
@@ -249,8 +265,37 @@ def fetch(cfg: dict[str, Any]) -> tuple[str | None, str, int | None]:
 
             raise RuntimeError(f"Could not find .deb file for version {version}")
 
-        # For simple direct URL mode (non-Debian)
-        print(f"  [URL] ℹ️  Using direct URL: {base_url}")
-        return None, base_url, None
+        # For URL-based mode with optional header extraction
+        # When response_header is specified, always use GET to get proper redirect headers
+        if response_header:
+            print(f"  [URL] 📡 Fetching with GET (to extract {response_header} header)")
+            r = requests.get(base_url, allow_redirects=False, timeout=30)
+        else:
+            print(f"  [URL] 📡 Fetching with method: {method}")
+            if method == "HEAD":
+                r = requests.head(base_url, allow_redirects=True, timeout=30)
+            else:
+                r = requests.get(base_url, allow_redirects=True, timeout=30, stream=True)
+        r.raise_for_status()
+
+        # Extract URL from response header if specified
+        if response_header:
+            download_url = r.headers.get(response_header)
+            if not download_url:
+                raise RuntimeError(f"Response header '{response_header}' not found in response")
+            print(f"  [URL] 🔗 Extracted from {response_header}: {download_url}")
+        else:
+            download_url = r.url if hasattr(r, 'url') else base_url
+            print(f"  [URL] ℹ️  Using direct URL: {download_url}")
+
+        # Extract version from URL if version_pattern is specified
+        version = None
+        if "version_pattern" in upstream:
+            version_match = re.search(upstream["version_pattern"], download_url)
+            if version_match:
+                version = version_match.group(1)
+                print(f"  [URL] 🏷️  Found version: {version}")
+
+        return version, download_url, None
 
     raise RuntimeError(f"Unsupported provider: {provider}")

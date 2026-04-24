@@ -1,0 +1,33 @@
+aur_repo: warp-terminal-bin
+pkgname: warp-terminal-bin
+pkgdesc: Blazingly fast, AI-powered terminal with modern UX
+url: https://www.warp.dev
+license: [Proprietary]
+arch:
+  - x86_64
+  - aarch64
+
+depends:
+  - glibc
+  - fuse2
+
+upstream:
+  provider: url
+  url: https://app.warp.dev/download?package=${arch}
+  arch_map:
+    x86_64: "appimage"
+    aarch64: "appimage_arm64"
+  response_header: Location
+  version_pattern: '/v([^/]+)/'
+
+type: appimage
+appimage:
+  appimage_name: "Warp-x86_64.AppImage"
+  binary_name: warp
+  desktop: true
+  icons: true
+
+install_files:
+  - source: LICENSE
+    dest: /usr/share/licenses/${pkgname}
+    mode: "644"

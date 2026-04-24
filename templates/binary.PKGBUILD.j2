@@ -25,6 +25,8 @@ provides=({{ provides | join(' ') }})
 source=("{{ download_url }}")
 sha256sums=('{{ sha256 }}')
 
+{%- if extract == 'tar' or extract == 'zip' %}
+
 prepare() {
 {%- if extract == 'tar' %}
     tar -xf "${srcdir}/$(basename "${source}")"
@@ -32,6 +34,7 @@ prepare() {
     unzip -q "${srcdir}/$(basename "${source}")"
 {%- endif %}
 }
+{%- endif %}
 
 package() {
 {%- if extract != 'none' and binary_name %}
