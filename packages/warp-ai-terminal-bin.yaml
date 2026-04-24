@@ -8,7 +8,6 @@ arch:
   - aarch64
 
 depends:
-  - glibc
   - fuse2
 
 upstream:
