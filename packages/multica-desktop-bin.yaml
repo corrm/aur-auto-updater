@@ -1,6 +1,6 @@
 aur_repo: multica-desktop-bin
 pkgname: multica-desktop-bin
-pkgdesc: Multi-agent AI coding framework - Desktop GUI
+pkgdesc: The open-source managed agents platform. Turn coding agents into real teammates — assign tasks, track progress, compound skills - Desktop GUI
 url: https://github.com/multica-ai/multica
 license: [MIT]
 arch:
