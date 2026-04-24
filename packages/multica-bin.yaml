@@ -1,6 +1,6 @@
 aur_repo: multica-bin
 pkgname: multica-bin
-pkgdesc: Multi-agent AI coding framework
+pkgdesc: The open-source managed agents platform. Turn coding agents into real teammates — assign tasks, track progress, compound skills
 url: https://github.com/multica-ai/multica
 license: [MIT]
 arch:
@@ -25,3 +25,11 @@ binary:
 
 provides:
   - multica
+
+install_files:
+  - source: LICENSE
+    dest: /usr/share/licenses/${pkgname}
+    mode: "644"
+  - source: README.md
+    dest: /usr/share/doc/${pkgname}
+    mode: "644"
