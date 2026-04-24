@@ -1,0 +1,27 @@
+aur_repo: multica-bin
+pkgname: multica-bin
+pkgdesc: Multi-agent AI coding framework
+url: https://github.com/multica-ai/multica
+license: [MIT]
+arch:
+  - x86_64
+  - aarch64
+
+conflicts:
+  - multica
+
+upstream:
+  provider: github
+  repo: multica-ai/multica
+  asset_regex: "multica-cli-.*-linux-${arch}\\.tar\\.gz"
+  extract: tar
+  arch_map:
+    x86_64: amd64
+    aarch64: arm64
+
+type: binary
+binary:
+  binary_name: multica
+
+provides:
+  - multica

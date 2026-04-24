@@ -1,0 +1,31 @@
+aur_repo: multica-desktop-bin
+pkgname: multica-desktop-bin
+pkgdesc: Multi-agent AI coding framework - Desktop GUI
+url: https://github.com/multica-ai/multica
+license: [MIT]
+arch:
+  - x86_64
+  - aarch64
+
+conflicts:
+  - multica-desktop
+
+depends:
+  - fuse2
+
+upstream:
+  provider: github
+  repo: multica-ai/multica
+  asset_regex: "multica-desktop-.*-linux-${arch}\\.AppImage$"
+  arch_map:
+    aarch64: arm64
+
+type: appimage
+appimage:
+  appimage_name: "multica-desktop-${pkgver}-linux-${arch}.AppImage"
+  binary_name: multica-desktop
+  desktop: true
+  icons: true
+
+provides:
+  - multica-desktop

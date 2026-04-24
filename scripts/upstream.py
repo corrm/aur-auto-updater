@@ -14,13 +14,14 @@ DEFAULT_ARCH_MAP = {
 }
 
 
-def github_latest(repo: str, asset_regex: str, interpolate: dict[str, str] | None = None) -> tuple[str | None, str, int | None, str | None]:
+def github_latest(repo: str, asset_regex: str, interpolate: dict[str, str] | None = None, arch_map: dict[str, str] | None = None) -> tuple[str | None, str, int | None, str | None]:
     """Fetch latest release info from GitHub.
 
     Args:
         repo: GitHub repository in format 'owner/repo'
         asset_regex: Regex pattern to match asset name (may include ${var} placeholders)
         interpolate: Optional dict of {var_name: value} for interpolation (e.g., {arch: x86_64})
+        arch_map: Optional custom arch mapping dict (overrides DEFAULT_ARCH_MAP if provided)
 
     Returns:
         Tuple of (tag_name or None, download_url, asset_id or None, sha256 or None)
@@ -39,14 +40,17 @@ def github_latest(repo: str, asset_regex: str, interpolate: dict[str, str] | Non
 
     print(f"  [GitHub] 🏷️  Found tag: {tag} (from {raw_tag})")
 
+    # Use custom arch_map if provided, otherwise fall back to DEFAULT_ARCH_MAP
+    effective_arch_map = arch_map if arch_map is not None else DEFAULT_ARCH_MAP
+
     # Build list of arch values to try: original first, then mapped fallback
     arch_values_to_try = []
     if interpolate and "arch" in interpolate:
         original_arch = interpolate["arch"]
         arch_values_to_try.append(original_arch)
         # Try mapped arch if different
-        if original_arch in DEFAULT_ARCH_MAP:
-            mapped = DEFAULT_ARCH_MAP[original_arch]
+        if original_arch in effective_arch_map:
+            mapped = effective_arch_map[original_arch]
             if mapped != original_arch:
                 arch_values_to_try.append(mapped)
 
@@ -214,7 +218,9 @@ def fetch(cfg: dict[str, Any]) -> tuple[str | None, str, int | None]:
         arch = cfg.get("arch", ["any"])
         interpolate["arch"] = arch[0] if isinstance(arch, list) else arch
         interpolate["pkgname"] = cfg.get("pkgname", "")
-        return github_latest(upstream["repo"], asset_regex, interpolate)
+        # Get custom arch_map if provided
+        arch_map = upstream.get("arch_map")
+        return github_latest(upstream["repo"], asset_regex, interpolate, arch_map)
 
     if provider == "pypi":
         pypi_name = upstream.get("pypi_name", cfg["pkgname"])
