@@ -1,5 +1,5 @@
-aur_repo: warp-terminal-bin
-pkgname: warp-terminal-bin
+aur_repo: warp-ai-terminal-bin
+pkgname: warp-ai-terminal-bin
 pkgdesc: Blazingly fast, AI-powered terminal with modern UX
 url: https://www.warp.dev
 license: [Proprietary]
@@ -26,8 +26,3 @@ appimage:
   binary_name: warp
   desktop: true
   icons: true
-
-install_files:
-  - source: LICENSE
-    dest: /usr/share/licenses/${pkgname}
-    mode: "644"
