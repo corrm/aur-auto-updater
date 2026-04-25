@@ -17,6 +17,9 @@ license=({{ license | join(' ') }})
 {%- if makedepends_list %}
 makedepends=({% for d in makedepends_list %}"{{ d }}"{% if not loop.last %} {% endif %}{% endfor %})
 {%- endif %}
+{%- if optdepends %}
+optdepends=({% for d in optdepends %}"{{ d }}"{% if not loop.last %} {% endif %}{% endfor %})
+{%- endif %}
 
 {%- set user_deps = depends or [] %}
 {%- set all_depends = (user_deps + builtin_deps) | unique %}

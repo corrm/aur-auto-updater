@@ -65,6 +65,17 @@
         "type": "string"
       }
     },
+    "optdepends": {
+      "type": "array",
+      "description": "Optional dependencies with descriptions (format: 'package: description' or just 'package').",
+      "items": {
+        "type": "string"
+      },
+      "examples": [
+        "python-litellm: multi-provider LLM support",
+        "python-pyaudio"
+      ]
+    },
     "options": {
       "type": "array",
       "description": "AUR/PKGBUILD options flags (e.g., !strip, !debug).",
