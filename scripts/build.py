@@ -130,19 +130,10 @@ def build(pkgfile: str) -> dict[str, str] | None:
     state_path = project_root / "state" / f"{pkgname}.json"
     state = load_state(str(state_path), pkgname)
 
-    # Check if package exists in AUR (not just local state)
-    print(f"[{pkgname}] 🔍 Checking AUR existence...")
-    in_aur = aur_exists(pkgname)
-
     # Determine if this is truly a new package
     last_version = state.get("last_version")
-    is_new_package = not in_aur and last_version is None
 
-    if in_aur:
-        print(f"[{pkgname}] 📦 Package EXISTS in AUR")
-    elif last_version is None:
-        print(f"[{pkgname}] ✨ NEW PACKAGE - Will be created")
-    else:
+    if last_version is not None:
         print(f"[{pkgname}] 📦 Last known version: {last_version}")
 
     try:
@@ -158,13 +149,23 @@ def build(pkgfile: str) -> dict[str, str] | None:
         print(f"[{pkgname}] 🔗 Download URL: {url}")
 
         # Compare versions - only skip if we have a previous version and it matches
-        if not is_new_package and last_version == tag:
+        if last_version is not None and last_version == tag:
             print(f"[{pkgname}] ✅ UP TO DATE - No changes detected")
             print(f"[{pkgname}] ℹ️  Skipping build (version {tag} already processed)")
             state["last_success"] = True
             state["last_error"] = None
             save_state(state_path, state)
             return None
+
+        # Only check AUR existence when we know there's a version change
+        print(f"[{pkgname}] 🔍 Checking AUR existence...")
+        in_aur = aur_exists(pkgname)
+        is_new_package = not in_aur and last_version is None
+
+        if in_aur:
+            print(f"[{pkgname}] 📦 Package EXISTS in AUR")
+        elif last_version is None:
+            print(f"[{pkgname}] ✨ NEW PACKAGE - Will be created")
 
         if is_new_package:
             print(f"[{pkgname}] 🆕 VERSION CHANGE: None → {tag} (NEW PACKAGE)")
