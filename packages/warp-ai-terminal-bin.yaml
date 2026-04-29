@@ -2,7 +2,7 @@ aur_repo: warp-ai-terminal-bin
 pkgname: warp-ai-terminal-bin
 pkgdesc: Blazingly fast, AI-powered terminal with modern UX
 url: https://www.warp.dev
-license: [Proprietary]
+license: [AGPL]
 arch:
   - x86_64
   - aarch64
