@@ -6,6 +6,7 @@ arch: [x86_64]
 license: [MIT]
 
 depends: ["python>=3.10"]
+makedepends: ["python-build" "python-installer" "python-wheel" "python-setuptools"]
 
 upstream:
   provider: pypi
