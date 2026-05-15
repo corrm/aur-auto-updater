@@ -18,7 +18,7 @@ provides:
 upstream:
   provider: github
   repo: crynta/terax-ai
-  asset_regex: ".*_Terax_${pkgver}_${arch}\\.AppImage"
+  asset_regex: ".*Terax_${pkgver}_${arch}\\.AppImage"
   arch_map:
     x86_64: amd64
 
