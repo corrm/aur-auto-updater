@@ -326,6 +326,26 @@ class TestAssetRegexInterpolation:
         tag = re.sub(r'^[a-zA-Z_-]*v?', '', raw_tag).lstrip('-')
         assert tag == "1.5.6"
 
+    def test_pkgver_substitution_in_asset_regex(self) -> None:
+        """Test ${pkgver} is substituted with the stripped tag in asset_regex.
+
+        Regression: github_latest() must substitute ${pkgver} with the
+        stripped tag (e.g. '0.6.5', not 'v0.6.5') so asset names like
+        'Terax_0.6.5_amd64.AppImage' can be matched when tag_name='v0.6.5'.
+        """
+        raw_tag = "v0.6.5"
+        tag = re.sub(r'^[a-zA-Z_-]*v?', '', raw_tag).lstrip('-')
+        assert tag == "0.6.5"
+
+        asset_regex = ".*Terax_${pkgver}_${arch}\\.AppImage"
+
+        # Simulate what github_latest does: substitute ${pkgver} with stripped tag
+        if "${pkgver}" in asset_regex:
+            asset_regex = asset_regex.replace("${pkgver}", tag)
+        asset_regex = asset_regex.replace("${arch}", "amd64")
+
+        assert asset_regex == ".*Terax_0.6.5_amd64\\.AppImage"
+        assert re.match(asset_regex, "Terax_0.6.5_amd64.AppImage")
     def test_no_interpolation_when_not_present(self) -> None:
         """Test asset_regex unchanged when no placeholders"""
         interpolate = {"arch": "x86_64", "pkgname": "myapp", "pkgver": "1.0.0"}
@@ -333,8 +353,6 @@ class TestAssetRegexInterpolation:
         for key, value in interpolate.items():
             asset_regex = asset_regex.replace(f"${{{key}}}", value)
         assert asset_regex == ".*AppImage$"
-
-
 class TestArchMapping:
     """Tests for arch_map configuration that maps Arch arch names to GitHub asset names."""
 

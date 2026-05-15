@@ -61,6 +61,11 @@ def github_latest(repo: str, asset_regex: str, interpolate: dict[str, str] | Non
     # Try each arch value until we find a match
     for arch_value in arch_values_to_try:
         asset_regex_try = asset_regex
+        # Substitute ${pkgver} with the stripped tag (e.g. "0.6.5", not "v0.6.5")
+        # so asset names like "Terax_0.6.5_amd64.AppImage" can be matched.
+        # The 'tag' variable already has the 'v' prefix stripped by the regex on line 39.
+        if "${pkgver}" in asset_regex_try:
+            asset_regex_try = asset_regex_try.replace("${pkgver}", tag)
         if arch_value:
             for key, value in {"arch": arch_value}.items():
                 placeholder = f"${{{key}}}"
