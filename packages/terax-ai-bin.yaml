@@ -1,0 +1,30 @@
+aur_repo: terax-ai-bin
+pkgname: terax-ai-bin
+pkgdesc: Modern AI terminal powered by Tauri
+url: https://github.com/crynta/terax-ai
+license: [Apache-2.0]
+arch: [x86_64]
+
+conflicts:
+  - terax
+  - terax-bin
+
+depends:
+  - fuse2
+
+provides:
+  - terax
+
+upstream:
+  provider: github
+  repo: crynta/terax-ai
+  asset_regex: ".*_Terax_${pkgver}_${arch}\\.AppImage"
+  arch_map:
+    x86_64: amd64
+
+type: appimage
+appimage:
+  appimage_name: "Terax_${pkgver}_amd64.AppImage"
+  binary_name: terax
+  desktop: true
+  icons: true
