@@ -107,12 +107,13 @@ def clone(repo: str, dest: str = None) -> str:
 
     print(f"  [AUR] 📥 Cloning {repo} from AUR...")
     subprocess.check_call([
-        "git", "clone", "--depth", "1",
+        "git", "clone",
         f"ssh://aur@aur.archlinux.org/{repo}.git",
         dest,
     ])
-    # Shallow clone can leave HEAD detached (git >=2.48); unshallow so push works
-    subprocess.check_call(["git", "fetch", "--unshallow"], cwd=dest)
+    # Shallow clone (--depth 1) leaves HEAD detached on git >=2.48 and
+    # doesn't set up remote tracking refs properly; AUR repos are tiny
+    # so a full clone is fast and avoids all these issues.
     subprocess.check_call(["git", "checkout", "-B", "master", "origin/master"], cwd=dest)
     return dest
 
