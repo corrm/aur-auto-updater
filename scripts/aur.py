@@ -111,6 +111,8 @@ def clone(repo: str, dest: str = None) -> str:
         f"ssh://aur@aur.archlinux.org/{repo}.git",
         dest,
     ])
+    # Shallow clone can leave HEAD detached (git >=2.48); ensure we're on master (AUR default)
+    subprocess.check_call(["git", "checkout", "-B", "master"], cwd=dest)
     return dest
 
 
@@ -124,7 +126,7 @@ def pull(repo_path: str) -> None:
         subprocess.CalledProcessError: If git pull fails.
     """
     print(f"  [AUR] 🔄 Pulling latest changes...")
-    subprocess.check_call(["git", "pull"], cwd=repo_path)
+    subprocess.check_call(["git", "pull", "origin", "master"], cwd=repo_path)
 
 
 def generate_srcinfo(repo_path: str) -> None:
@@ -181,7 +183,7 @@ def commit_and_push(repo_path: str, msg: str) -> None:
         raise subprocess.CalledProcessError(result.returncode, "git commit", output=result.stderr)
 
     print(f"  [AUR] 🚀 Pushing to AUR...")
-    result = subprocess.run(["git", "push"], cwd=repo_path, capture_output=True, text=True)
+    result = subprocess.run(["git", "push", "origin", "master"], cwd=repo_path, capture_output=True, text=True)
     if result.returncode != 0:
         print(f"  [AUR] ❌ Git push failed!")
         print(f"  [AUR] 📋 stderr: {result.stderr.strip()}")
@@ -216,7 +218,7 @@ def publish(pkgname: str, build_dir: str = "build") -> dict[str, str]:
         else:
             print(f"[{pkgname}] ✨ New package - will create in AUR")
             os.makedirs(repo_path, exist_ok=True)
-            subprocess.check_call(["git", "init"], cwd=repo_path)
+            subprocess.check_call(["git", "init", "-b", "master"], cwd=repo_path)
             # AUR requires the remote to be set before push
             subprocess.check_call(
                 ["git", "remote", "add", "origin",
