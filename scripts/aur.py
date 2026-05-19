@@ -111,8 +111,9 @@ def clone(repo: str, dest: str = None) -> str:
         f"ssh://aur@aur.archlinux.org/{repo}.git",
         dest,
     ])
-    # Shallow clone can leave HEAD detached (git >=2.48); ensure we're on master (AUR default)
-    subprocess.check_call(["git", "checkout", "-B", "master"], cwd=dest)
+    # Shallow clone can leave HEAD detached (git >=2.48); unshallow so push works
+    subprocess.check_call(["git", "fetch", "--unshallow"], cwd=dest)
+    subprocess.check_call(["git", "checkout", "-B", "master", "origin/master"], cwd=dest)
     return dest
 
 
