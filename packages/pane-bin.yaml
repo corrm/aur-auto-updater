@@ -1,0 +1,31 @@
+aur_repo: pane-bin
+pkgname: pane-bin
+pkgdesc: Terminal-native AI agent manager — any provider, one unified interface
+url: https://github.com/dcouple/Pane
+license: [AGPL-3.0]
+arch:
+  - x86_64
+  - aarch64
+
+conflicts:
+  - pane
+
+depends:
+  - fuse2
+
+upstream:
+  provider: github
+  repo: dcouple/Pane
+  asset_regex: "Pane-.*-linux-${arch}\\.AppImage$"
+  arch_map:
+    aarch64: arm64
+
+type: appimage
+appimage:
+  appimage_name: "Pane-${pkgver}-linux-${arch}.AppImage"
+  binary_name: pane
+  desktop: true
+  icons: true
+
+provides:
+  - pane
