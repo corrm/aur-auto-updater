@@ -114,7 +114,13 @@ def clone(repo: str, dest: str = None) -> str:
     # Shallow clone (--depth 1) leaves HEAD detached on git >=2.48 and
     # doesn't set up remote tracking refs properly; AUR repos are tiny
     # so a full clone is fast and avoids all these issues.
-    subprocess.check_call(["git", "checkout", "-B", "master", "origin/master"], cwd=dest)
+    # Skip checkout for empty repos (new AUR packages with no commits yet).
+    result = subprocess.run(
+        ["git", "rev-parse", "--verify", "origin/master"],
+        cwd=dest, capture_output=True,
+    )
+    if result.returncode == 0:
+        subprocess.check_call(["git", "checkout", "-B", "master", "origin/master"], cwd=dest)
     return dest
 
 
