@@ -1,0 +1,54 @@
+name: desktop-entry
+description: Install a .desktop launcher (and icon) so a GUI/web app shows in the application menu.
+inputs:
+  name:
+    required: true
+    type: string
+    description: Basename for the .desktop file and icon (usually the command name)
+  title:
+    required: true
+    type: string
+    description: Display name shown in the menu (Name=)
+  exec:
+    required: true
+    type: string
+    description: Command line for Exec=
+  comment:
+    default: ""
+    type: string
+    description: Tooltip/description (Comment=)
+  categories:
+    default: "Utility;"
+    type: string
+    description: freedesktop Categories= value (semicolon-terminated)
+  terminal:
+    default: false
+    type: boolean
+    description: Whether the app runs in a terminal
+  icon_source:
+    default: ""
+    type: string
+    description: Path (relative to workdir) of a PNG icon to install; empty installs no icon
+  icon_size:
+    default: "128x128"
+    type: string
+    description: hicolor size directory for the icon (e.g. 128x128)
+  workdir:
+    default: "$srcdir/{{ pkgname }}"
+    type: string
+    description: Base directory for icon_source
+package: |
+    install -d "$pkgdir/usr/share/applications"
+    printf '%s\n' \
+      '[Desktop Entry]' \
+      'Type=Application' \
+      'Name={{ title }}' \
+      'Comment={{ comment }}' \
+      'Exec={{ exec }}' \
+      'Icon={{ name }}' \
+      'Terminal={{ "true" if terminal else "false" }}' \
+      'Categories={{ categories }}' \
+      > "$pkgdir/usr/share/applications/{{ name }}.desktop"
+    {% if icon_source %}
+    install -Dm644 "{{ workdir }}/{{ icon_source }}" "$pkgdir/usr/share/icons/hicolor/{{ icon_size }}/apps/{{ name }}.png"
+    {% endif %}

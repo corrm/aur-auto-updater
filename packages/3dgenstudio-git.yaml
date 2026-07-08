@@ -5,7 +5,7 @@ pkgdesc: "AI image-to-3D model generation studio (Vite UI + Node/Python backend)
 url: https://github.com/visualbruno/3DGenStudio
 license: [custom]
 
-depends: [nodejs]
+depends: [nodejs, xdg-utils]
 optdepends:
   - "python: local 3D-generation backend (python-server)"
 conflicts: [3dgenstudio]
@@ -48,13 +48,27 @@ steps:
       name: 3dgenstudio
       script: |
         #!/bin/bash
-        # Runs the production server (server.js): serves the built dist/ UI + APIs
-        # on http://localhost:${PORT:-3001}. App data (sqlite, assets) is written
-        # under process.cwd()/data, so run from a per-user writable directory.
-        set -e
+        # Starts the production server (serves the built dist/ UI + APIs) and opens it
+        # in the browser. If it's already running, just opens the browser. App data
+        # (sqlite, assets) is written under process.cwd()/data — a per-user writable dir.
         app=/opt/3dgenstudio-git
         data="${XDG_DATA_HOME:-$HOME/.local/share}/3dgenstudio"
+        port="${PORT:-3001}"
+        url="http://localhost:$port"
         mkdir -p "$data"
         cd "$data"
-        echo "3dgenstudio: open http://localhost:${PORT:-3001}"
+        _up() { (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; }
+        if _up; then exec xdg-open "$url"; fi
+        ( for _ in $(seq 1 50); do _up && { xdg-open "$url"; break; }; sleep 0.2; done ) &
+        echo "3dgenstudio: starting on $url"
         exec node "$app/server.js"
+  - uses: desktop-entry
+    name: Install menu entry + icon
+    with:
+      name: 3dgenstudio
+      title: 3D Gen Studio
+      exec: 3dgenstudio
+      comment: AI image-to-3D model generation studio
+      categories: "Graphics;3DGraphics;"
+      icon_source: dist/favicon.png
+      icon_size: 128x128

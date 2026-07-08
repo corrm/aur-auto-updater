@@ -27,7 +27,7 @@ class TestRenderRealPackage:
     def test_metadata(self) -> None:
         assert "pkgname=3dgenstudio-git" in self.out
         assert "pkgver=r20260708.abc1234" in self.out
-        assert 'depends=("nodejs")' in self.out
+        assert 'depends=("nodejs" "xdg-utils")' in self.out
         assert 'optdepends=("python: local 3D-generation backend (python-server)")' in self.out
 
     def test_git_source_and_skip_checksum(self) -> None:
@@ -58,6 +58,30 @@ class TestRenderRealPackage:
         script = base64.b64decode(b64).decode()
         assert script.startswith("#!/bin/bash")
         assert 'node "$app/server.js"' in script            # runs the production server
+
+
+class TestDesktopEntry:
+    def test_desktop_entry_and_icon(self) -> None:
+        cfg = {"pkgname": "myapp", "type": "actions", "steps": [
+            {"uses": "git-source", "with": {"url": "u"}},
+            {"uses": "desktop-entry", "with": {
+                "name": "myapp", "title": "My App", "exec": "myapp",
+                "comment": "does things", "categories": "Utility;",
+                "icon_source": "dist/favicon.png", "icon_size": "128x128"}},
+        ]}
+        out = actions.render(cfg, "1")
+        assert "/usr/share/applications/myapp.desktop" in out
+        assert "'Name=My App'" in out
+        assert "'Exec=myapp'" in out
+        assert "/usr/share/icons/hicolor/128x128/apps/myapp.png" in out
+
+    def test_desktop_entry_without_icon(self) -> None:
+        cfg = {"pkgname": "x", "type": "actions", "steps": [
+            {"uses": "desktop-entry", "with": {"name": "x", "title": "X", "exec": "x"}},
+        ]}
+        out = actions.render(cfg, "1")
+        assert "myapp.png" not in out
+        assert "hicolor" not in out  # no icon installed when icon_source omitted
 
 
 class TestRepublishLogic:
