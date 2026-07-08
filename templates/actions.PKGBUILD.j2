@@ -1,0 +1,30 @@
+pkgname={{ pkgname }}
+pkgver={{ pkgver }}
+pkgrel=1
+pkgdesc="{{ pkgdesc }}"
+arch=({{ arch | join(' ') }})
+url="{{ url }}"
+license=({{ license | join(' ') }})
+{%- if depends %}
+depends=({% for d in depends %}"{{ d }}"{% if not loop.last %} {% endif %}{% endfor %})
+{%- endif %}
+{%- if makedepends %}
+makedepends=({% for d in makedepends %}"{{ d }}"{% if not loop.last %} {% endif %}{% endfor %})
+{%- endif %}
+{%- if optdepends %}
+optdepends=({% for d in optdepends %}"{{ d }}"{% if not loop.last %} {% endif %}{% endfor %})
+{%- endif %}
+{%- if options %}
+options=({{ options | join(' ') }})
+{%- endif %}
+{%- if conflicts %}
+conflicts=({% for d in conflicts %}"{{ d }}"{% if not loop.last %} {% endif %}{% endfor %})
+{%- endif %}
+{%- if provides %}
+provides=({% for d in provides %}"{{ d }}"{% if not loop.last %} {% endif %}{% endfor %})
+{%- endif %}
+
+source=({% for s in sources %}"{{ s }}"{% if not loop.last %} {% endif %}{% endfor %})
+sha256sums=({% for s in sha256sums %}'{{ s }}'{% if not loop.last %} {% endif %}{% endfor %})
+
+{{ functions }}

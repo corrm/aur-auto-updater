@@ -26,7 +26,8 @@
         "debian",
         "pypi",
         "npm",
-        "binary"
+        "binary",
+        "actions"
       ]
     },
     "pkgdesc": {
@@ -99,21 +100,26 @@
       "properties": {
         "provider": {
           "type": "string",
-          "description": "Upstream provider type used for version resolution.",
+          "description": "Upstream provider type used for version resolution. 'github' tracks releases/assets; 'git' tracks a ref on any git host (GitHub/GitLab/Codeberg/Bitbucket/self-hosted) via ls-remote.",
           "enum": [
             "github",
             "url",
             "pypi",
-            "npm"
+            "npm",
+            "git"
           ]
         },
         "repo": {
           "type": "string",
-          "description": "Repository identifier (for GitHub provider: owner/repo)."
+          "description": "Repository identifier in owner/repo form (github provider; also a GitHub shorthand for the git provider when 'url' is omitted)."
+        },
+        "branch": {
+          "type": "string",
+          "description": "Branch, tag, or commit to track (git provider). Default: HEAD."
         },
         "url": {
           "type": "string",
-          "description": "Direct URL used when provider is url."
+          "description": "Direct URL used when provider is 'url'; git remote URL when provider is 'git'."
         },
         "method": {
           "type": "string",
@@ -261,6 +267,73 @@
         "type": "string"
       }
     },
+    "steps": {
+      "type": "array",
+      "description": "Ordered reusable build steps (type: actions). Each step 'uses' an action from actions/<name>.yaml with 'with' params.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "required": [
+              "uses"
+            ]
+          },
+          {
+            "required": [
+              "run"
+            ]
+          }
+        ],
+        "properties": {
+          "uses": {
+            "type": "string",
+            "description": "Name of the reusable action (file actions/<uses>.yaml). Mutually exclusive with 'run'."
+          },
+          "run": {
+            "type": "string",
+            "description": "Inline bash appended to a phase, instead of a reusable action. Mutually exclusive with 'uses'."
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "prepare",
+              "build",
+              "package"
+            ],
+            "description": "Phase an inline 'run' step contributes to. Default: build."
+          },
+          "id": {
+            "type": "string",
+            "description": "Optional step id for referencing its outputs (defaults to 'uses')."
+          },
+          "name": {
+            "type": "string",
+            "description": "Human-readable label; emitted as a comment above the step's bash."
+          },
+          "if": {
+            "type": "string",
+            "description": "Jinja expression; the step is skipped when it evaluates falsy (e.g. \"arch[0] == 'x86_64'\")."
+          },
+          "env": {
+            "type": "object",
+            "description": "Environment variables exported before the step's bash in each phase.",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          },
+          "with": {
+            "type": "object",
+            "description": "Inputs passed to the action.",
+            "additionalProperties": true
+          }
+        }
+      }
+    },
     "systemd_service": {
       "type": "string",
       "description": "Systemd service file to install (relative to source archive)."
@@ -336,6 +409,16 @@
       },
       "required": [
         "binary"
+      ]
+    },
+    {
+      "properties": {
+        "type": {
+          "const": "actions"
+        }
+      },
+      "required": [
+        "steps"
       ]
     }
   ]

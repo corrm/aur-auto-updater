@@ -1,0 +1,15 @@
+name: install-launcher
+description: Install an executable launcher script at /usr/bin/<name>.
+inputs:
+  name:
+    required: true
+    type: string
+    description: Command name under /usr/bin
+  script:
+    required: true
+    type: string
+    description: Full script body, including shebang
+package: |
+    install -d "$pkgdir/usr/bin"
+    base64 -d > "$pkgdir/usr/bin/{{ name }}" <<< "{{ script | b64 }}"
+    chmod 755 "$pkgdir/usr/bin/{{ name }}"

@@ -1,0 +1,57 @@
+pkgname: 3dgenstudio-git
+aur_repo: 3dgenstudio-git
+type: actions
+arch: [x86_64]
+pkgdesc: "AI image-to-3D model generation studio (Vite frontend + Python backend)"
+url: https://github.com/visualbruno/3DGenStudio
+license: [custom]
+depends: [nodejs, python]
+conflicts: [3dgenstudio]
+provides: [3dgenstudio]
+upstream:
+  provider: git
+  url: https://github.com/visualbruno/3DGenStudio.git
+  branch: main
+steps:
+  - uses: git-source
+    name: Fetch source
+    with:
+      url: https://github.com/visualbruno/3DGenStudio.git
+      ref: main
+  - uses: npm-build
+    name: Build frontend
+    env:
+      NODE_ENV: production
+    with:
+      build_script: build
+  - uses: install-tree
+    name: Install app tree
+    with:
+      paths: dist python-server server.js package.json package-lock.json
+  - run: rm -f "$pkgdir/opt/3dgenstudio-git/.env"
+    name: Drop bundled .env
+    phase: package
+  - uses: install-launcher
+    name: Install launcher
+    with:
+      name: 3dgenstudio
+      script: |
+        #!/bin/bash
+        # First run bootstraps a per-user venv for the Python backend, then starts
+        # the backend and the Node frontend server together.
+        set -e
+        app=/opt/3dgenstudio-git
+        data="${XDG_DATA_HOME:-$HOME/.local/share}/3dgenstudio"
+        venv="$data/.venv"
+        mkdir -p "$data"
+        if [ ! -x "$venv/bin/python" ]; then
+            echo "3dgenstudio: setting up Python backend (first run)..."
+            python -m venv "$venv"
+            "$venv/bin/pip" install --upgrade pip
+            "$venv/bin/pip" install -r "$app/python-server/requirements.txt"
+        fi
+        cd "$app"
+        "$venv/bin/python" python-server/main.py &
+        backend=$!
+        trap 'kill $backend 2>/dev/null' EXIT
+        exec node server.js

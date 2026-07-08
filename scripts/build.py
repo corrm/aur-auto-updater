@@ -180,22 +180,43 @@ def build(pkgfile: str) -> dict[str, str] | None:
             print(f"[{pkgname}] 📥 Calculating SHA256 checksum...")
             checksum = sha256(url)
 
-        tmpl_path = select_template(cfg)
-        if not Path(tmpl_path).is_absolute():
-            project_root = Path(__file__).parent.parent
-            tmpl_path = project_root / tmpl_path
-            outdir = project_root / "build" / pkgname
-        else:
-            outdir = Path("build") / pkgname
-        print(f"[{pkgname}] 📝 Using template: {tmpl_path}")
-
-        tmpl = Template(Path(tmpl_path).read_text())
+        project_root = Path(__file__).parent.parent
+        outdir = project_root / "build" / pkgname
 
         pkgver = tag or "0"
-        
+
         # Convert version to valid pkgver (replace hyphens with dots)
         # Arch pkgver cannot contain hyphens, colons, forward slashes, or whitespace
         pkgver = pkgver.replace("-", ".").replace(":", ".")
+
+        # 'actions' type composes the PKGBUILD from reusable steps instead of a
+        # single monolithic template.
+        if cfg["type"] == "actions":
+            from actions import render as render_actions
+            print(f"[{pkgname}] 🧩 Composing PKGBUILD from actions...")
+            rendered = render_actions(cfg, pkgver)
+            os.makedirs(outdir, exist_ok=True)
+            pkgbuild_path = outdir / "PKGBUILD"
+            Path(pkgbuild_path).write_text(rendered)
+            print(f"[{pkgname}] ✅ Generated PKGBUILD at: {pkgbuild_path}")
+            state.update({
+                "last_version": tag,
+                "last_asset_id": asset_id,
+                "last_success": True,
+                "last_error": None,
+                "retry_count": 0
+            })
+            save_state(state_path, state)
+            status = "created" if is_new_package else "updated"
+            print(f"[{pkgname}] SUCCESS - Package {status.upper()} (version {tag})")
+            return {"pkgname": pkgname, "status": status}
+
+        tmpl_path = select_template(cfg)
+        if not Path(tmpl_path).is_absolute():
+            tmpl_path = project_root / tmpl_path
+        print(f"[{pkgname}] 📝 Using template: {tmpl_path}")
+
+        tmpl = Template(Path(tmpl_path).read_text())
 
         # Pass debian config if available
         debian_config = cfg.get("debian", {})

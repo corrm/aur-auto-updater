@@ -2,10 +2,52 @@
 
 ## Architecture
 
-- **Package types**: `debian` (extract .deb), `appimage` (AppImage), `binary` (extracted tar/zip)
+- **Package types**: `debian` (extract .deb), `appimage` (AppImage), `binary` (extracted tar/zip), `pypi`, `npm`, `actions` (compose reusable build steps)
 - **Templates**: `templates/*.PKGBUILD.j2`
+- **Actions**: `actions/*.yaml` — reusable, parameterized build steps (GitHub-Actions-style) for `type: actions`
 - **Package configs**: `packages/*.yaml`
 - **Schema**: `schema/package.schema.json`
+
+## Actions (type: actions)
+
+For source projects with no releases (clone → build → install). A package lists ordered
+`steps`; each `uses` an action from `actions/<name>.yaml` and passes `with` params.
+`scripts/actions.py` resolves inputs and renders `templates/actions.PKGBUILD.j2`. Paired
+with the `git` upstream provider (tracks a branch head → VCS pkgver, sources use `SKIP`
+checksums). Example: `packages/3dgenstudio-git.yaml`. Tests: `tests/test_actions.py`.
+
+An action file (`actions/*.yaml`, schema `schema/action.schema.json`) declares:
+
+- `inputs` — each input is either a scalar default (`ref: HEAD`; `null` = required) or an
+  explicit spec: `{default, required, choices, type, description}`. `choices` and `type`
+  (`string`/`number`/`boolean`/`array`) are enforced at render time.
+- `makedepends` / `depends` / `sources` — contributed to the package (deduped, Jinja-templated).
+- `pkgver` / `prepare` / `build` / `package` — Jinja-templated bash appended to that PKGBUILD phase.
+- `outputs` — named Jinja strings published as `steps['<id>'].outputs.<name>` for later steps
+  to reference in their `with:` values. A step's id defaults to its `uses` name; set `id:` to
+  disambiguate. Unknown references are a hard error (StrictUndefined), not a silent empty string.
+
+Each step (GitHub-Actions-inspired) supports:
+
+- `uses:` a reusable action **or** `run:` inline bash (exactly one). A `run:` step appends
+  bash to `phase:` (`prepare`/`build`/`package`, default `build`) — no action file needed.
+- `name:` — label emitted as a `# comment` above the step's bash in the PKGBUILD.
+- `if:` — Jinja expression; the step is skipped when falsy (e.g. `if: "arch[0] == 'x86_64'"`).
+  Expressions see `pkgname`, `pkgver`, `arch`, and `steps` (prior outputs).
+- `env:` — `KEY: value` map exported before the step's bash (per phase, since phase functions
+  are separate shell scopes).
+- `id:` / `with:` — as above.
+
+`scripts/validate.py` checks packages against `package.schema.json`, actions against
+`action.schema.json`, and dry-runs every `type: actions` package through the engine so
+rule violations (bad choice, wrong type, missing/unknown input, unknown action, `if`/`run`
+misuse) fail CI.
+
+Outputs are render-time only (values known while generating the PKGBUILD). Build-time shell
+outputs (values computed *during* makepkg and passed between phases) are intentionally not
+implemented — no action needs them, and it would force a temp-file protocol + auto-sourced
+preamble into every phase. Add a `$srcdir/.actions-outputs` sourced-preamble convention if one
+ever does.
 
 ## Key Commands
 

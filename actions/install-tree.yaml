@@ -1,0 +1,21 @@
+name: install-tree
+description: Copy built files/directories from the source tree into the package.
+inputs:
+  workdir:
+    default: "$srcdir/{{ pkgname }}"
+    type: string
+    description: Directory the paths are relative to
+  paths:
+    required: true
+    type: string
+    description: Space-separated paths to copy (e.g. "dist server.js")
+  dest:
+    default: "/opt/{{ pkgname }}"
+    type: string
+    description: Install prefix inside the package
+outputs:
+  prefix: "{{ dest }}"   # where the tree landed, for launcher scripts etc.
+package: |
+    cd "{{ workdir }}"
+    install -d "$pkgdir{{ dest }}"
+    cp -a {{ paths }} "$pkgdir{{ dest }}/"

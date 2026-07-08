@@ -1,0 +1,23 @@
+name: npm-build
+description: Install Node dependencies and run a build script (npm or bun).
+inputs:
+  workdir:
+    default: "$srcdir/{{ pkgname }}"
+    type: string
+    description: Directory to build in (default = the git checkout)
+  package_manager:
+    default: npm
+    choices: [npm, bun]
+    description: Package manager to use
+  build_script:
+    default: build
+    type: string
+    description: package.json script to run (<pm> run <build_script>)
+outputs:
+  dist: "{{ workdir }}/dist"   # conventional Vite/webpack output dir
+makedepends:
+  - "{{ package_manager }}"
+build: |
+    cd "{{ workdir }}"
+    {% if package_manager == 'bun' %}bun install --frozen-lockfile{% else %}npm ci{% endif %}
+    {{ package_manager }} run {{ build_script }}

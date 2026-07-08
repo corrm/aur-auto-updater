@@ -1,0 +1,112 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Reusable build action (actions/*.yaml)",
+  "type": "object",
+  "required": [
+    "name"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Action identifier; must match the file name (actions/<name>.yaml)."
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable summary of what the action does."
+    },
+    "inputs": {
+      "type": "object",
+      "description": "Declared inputs. Each value is a scalar default (null = required) or an explicit spec.",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null",
+              "array"
+            ],
+            "description": "Scalar shorthand: the default value (null means required)."
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "default": {
+                "description": "Default value used when the caller omits this input."
+              },
+              "required": {
+                "type": "boolean",
+                "description": "Whether the caller must supply this input. Defaults to true when no default is given."
+              },
+              "choices": {
+                "type": "array",
+                "description": "Allowed values; a caller value outside this set is rejected.",
+                "minItems": 1
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "string",
+                  "number",
+                  "boolean",
+                  "array"
+                ],
+                "description": "Expected value type, validated before templating."
+              },
+              "description": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "outputs": {
+      "type": "object",
+      "description": "Named values (Jinja strings) published for later steps as steps['<id>'].outputs.<name>.",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "depends": {
+      "type": "array",
+      "description": "Runtime dependencies contributed to the package.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "makedepends": {
+      "type": "array",
+      "description": "Build-time dependencies contributed to the package.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "sources": {
+      "type": "array",
+      "description": "PKGBUILD source() entries contributed by this action (Jinja strings).",
+      "items": {
+        "type": "string"
+      }
+    },
+    "pkgver": {
+      "type": "string",
+      "description": "Bash body of the PKGBUILD pkgver() function (Jinja-templated)."
+    },
+    "prepare": {
+      "type": "string",
+      "description": "Bash appended to the PKGBUILD prepare() function (Jinja-templated)."
+    },
+    "build": {
+      "type": "string",
+      "description": "Bash appended to the PKGBUILD build() function (Jinja-templated)."
+    },
+    "package": {
+      "type": "string",
+      "description": "Bash appended to the PKGBUILD package() function (Jinja-templated)."
+    }
+  }
+}

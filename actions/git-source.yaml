@@ -1,0 +1,20 @@
+name: git-source
+description: Add a git repository as the package source and derive an accurate VCS pkgver().
+inputs:
+  url:
+    required: true
+    type: string
+    description: Clone URL, e.g. https://github.com/owner/repo.git
+  ref:
+    default: HEAD
+    type: string
+    description: Branch, tag, or commit to track
+makedepends:
+  - git
+sources:
+  - "{{ pkgname }}::git+{{ url }}{% if ref != 'HEAD' %}#branch={{ ref }}{% endif %}"
+outputs:
+  dir: "$srcdir/{{ pkgname }}"   # checkout dir; wire into a later step's workdir if desired
+pkgver: |
+    cd "$srcdir/{{ pkgname }}"
+    printf 'r%s.%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"

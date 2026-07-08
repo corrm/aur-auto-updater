@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 from typing import Any
 
 import requests  # type: ignore[import-untyped]
@@ -148,6 +149,39 @@ def npm_latest(package_name: str) -> tuple[str | None, str, None]:
     return version, tarball_url, None
 
 
+def git_head(url: str, ref: str = "HEAD") -> tuple[str, str, None, str]:
+    """Resolve a git ref to a VCS pkgver for change detection — works with ANY git host.
+
+    Uses `git ls-remote` (no clone), so GitHub, GitLab, Codeberg, Bitbucket, and
+    self-hosted remotes all work. The committed .SRCINFO carries `r<short_sha>` (which
+    changes whenever upstream advances, triggering a rebuild); the PKGBUILD's pkgver()
+    computes the authoritative `r<count>.<sha>` at build time on the user's machine.
+
+    Args:
+        url: Git remote URL (e.g. https://github.com/owner/repo.git)
+        ref: Branch, tag, or commit to track (default: HEAD)
+
+    Returns:
+        Tuple of (pkgver, git_source_url, None, 'SKIP')
+    """
+    print(f"  [git] 📡 ls-remote {url} {ref}")
+    result = subprocess.run(
+        ["git", "ls-remote", url, ref],
+        capture_output=True, text=True, timeout=60,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"git ls-remote failed for {url} ({ref}): {result.stderr.strip()}")
+    lines = [line for line in result.stdout.splitlines() if line.strip()]
+    if not lines:
+        raise RuntimeError(f"git ls-remote found no ref '{ref}' at {url}")
+    sha = lines[0].split()[0]
+    # ponytail: ls-remote can't give commit count/date cheaply, so the static pkgver is
+    # r<short_sha> (not monotonic). pkgver() in the PKGBUILD is authoritative at build time.
+    pkgver = f"r{sha[:7]}"
+    print(f"  [git] 🏷️  pkgver: {pkgver}")
+    return pkgver, url, None, "SKIP"
+
+
 def debian_latest(base_url: str, pkg_pattern: str) -> str | None:
     """Fetch latest Debian package version from package listing page.
 
@@ -234,6 +268,15 @@ def fetch(cfg: dict[str, Any]) -> tuple[str | None, str, int | None]:
     if provider == "npm":
         npm_name = upstream.get("npm_name", cfg["pkgname"])
         return npm_latest(npm_name)
+
+    if provider == "git":
+        url = upstream.get("url")
+        if not url:
+            repo = upstream.get("repo")
+            if not repo:
+                raise RuntimeError("git provider requires 'url' (any git host) or 'repo' (owner/repo → GitHub)")
+            url = f"https://github.com/{repo}.git"
+        return git_head(url, upstream.get("branch", "HEAD"))
 
     if provider == "url":
         base_url = upstream["url"]
