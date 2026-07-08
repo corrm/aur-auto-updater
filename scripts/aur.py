@@ -7,6 +7,48 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import requests  # type: ignore[import-untyped]
+
+RPC_INFO_URL = "https://aur.archlinux.org/rpc/v5/info"
+
+
+def info(pkgname: str) -> dict | None:
+    """Look up a package in the AUR via the RPC API — no clone, no SSH.
+
+    Returns the package's info dict (including its 'Version') or None if it is not
+    published in the AUR. Raises on network/HTTP errors so callers can distinguish
+    "not published" (None) from "couldn't check" (exception).
+
+    Args:
+        pkgname: The AUR package name.
+
+    Returns:
+        The package info dict, or None if the package is not in the AUR.
+    """
+    r = requests.get(RPC_INFO_URL, params={"arg[]": pkgname}, timeout=15)
+    r.raise_for_status()
+    results = r.json().get("results") or []
+    return results[0] if results else None
+
+
+def current_version(pkgname: str) -> str | None:
+    """Return the pkgver currently published in the AUR (pkgrel stripped), or None.
+
+    e.g. AUR Version '1.2.3-1' -> '1.2.3'. Uses the RPC API (no clone), so it is the
+    authoritative, cheap way to decide whether an upstream bump needs publishing.
+
+    Args:
+        pkgname: The AUR package name.
+
+    Returns:
+        The published pkgver without pkgrel, or None if not in the AUR.
+    """
+    data = info(pkgname)
+    if not data:
+        return None
+    version = data.get("Version", "")
+    return version.rsplit("-", 1)[0] if version else None
+
 
 def exists(pkgname: str) -> bool:
     """Check if a package exists in the AUR using SSH git ls-remote.

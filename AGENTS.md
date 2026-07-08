@@ -87,6 +87,7 @@ uv run pytest tests/ -v
 5. **noextract order**: Must define `_appimage` variable BEFORE `noextract` line in template
 6. **extract_method**: Supports `ar` (default), `dpkg`, `bsdtar` - adds dpkg to makedepends automatically if used
 7. **Default arch mapping**: Some releases use `amd64`/`arm64`, Arch uses `x86_64`/`aarch64`. The system tries original arch first, then falls back to mapped if no asset matches. GitHub provider gets SHA256 from API - no download needed!
+8. **Update detection (no needless clone)**: `build()` decides whether to publish via two gates — (1) local `state/*.json` match, then (2) the AUR RPC API (`aur.current_version()`, `https://aur.archlinux.org/rpc/v5/info`), which is authoritative and clone-free. A package already at the target pkgver is skipped even if its state file is missing/stale, so the AUR repo is only cloned when there's a real update. `publish()` still re-checks existence over SSH, so a flaky RPC can't cause a mispublish.
 
 ## Package YAML Structure
 

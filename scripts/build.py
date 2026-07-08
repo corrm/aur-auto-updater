@@ -14,7 +14,7 @@ import yaml  # type: ignore[import-untyped]
 from jinja2 import Template  # type: ignore[import-untyped]
 
 from upstream import fetch
-from aur import exists as aur_exists
+import aur
 
 
 def select_template(cfg: dict[str, Any]) -> str:
@@ -148,7 +148,7 @@ def build(pkgfile: str) -> dict[str, str] | None:
         print(f"[{pkgname}] 🌐 Fetched upstream version: {tag}")
         print(f"[{pkgname}] 🔗 Download URL: {url}")
 
-        # Compare versions - only skip if we have a previous version and it matches
+        # Fast local gate: state already records this exact upstream version.
         if last_version is not None and last_version == tag:
             print(f"[{pkgname}] ✅ UP TO DATE - No changes detected")
             print(f"[{pkgname}] ℹ️  Skipping build (version {tag} already processed)")
@@ -157,13 +157,32 @@ def build(pkgfile: str) -> dict[str, str] | None:
             save_state(state_path, state)
             return None
 
-        # Only check AUR existence when we know there's a version change
-        print(f"[{pkgname}] 🔍 Checking AUR existence...")
-        in_aur = aur_exists(pkgname)
+        # Target pkgver (Arch cannot contain hyphens/colons/slashes/whitespace).
+        pkgver = (tag or "0").replace("-", ".").replace(":", ".")
+
+        # Authoritative, clone-free gate: ask the AUR its current version via the RPC
+        # API. This skips packages already published at the target version even when the
+        # local state cache is missing or stale — avoiding a needless clone + republish.
+        # (publish() still re-checks existence over SSH, so a flaky RPC can't mispublish.)
+        aur_ver = None
+        try:
+            aur_ver = aur.current_version(pkgname)
+        except Exception as e:
+            print(f"[{pkgname}] ⚠️  AUR RPC check failed ({e}); continuing without it")
+        in_aur = aur_ver is not None
+
+        if in_aur and tag is not None and aur_ver == pkgver:
+            print(f"[{pkgname}] ✅ AUR already at {aur_ver} - skipping (no clone)")
+            state["last_version"] = tag
+            state["last_success"] = True
+            state["last_error"] = None
+            save_state(state_path, state)
+            return None
+
         is_new_package = not in_aur and last_version is None
 
         if in_aur:
-            print(f"[{pkgname}] 📦 Package EXISTS in AUR")
+            print(f"[{pkgname}] 📦 Package EXISTS in AUR (current: {aur_ver})")
         elif last_version is None:
             print(f"[{pkgname}] ✨ NEW PACKAGE - Will be created")
 
@@ -182,12 +201,6 @@ def build(pkgfile: str) -> dict[str, str] | None:
 
         project_root = Path(__file__).parent.parent
         outdir = project_root / "build" / pkgname
-
-        pkgver = tag or "0"
-
-        # Convert version to valid pkgver (replace hyphens with dots)
-        # Arch pkgver cannot contain hyphens, colons, forward slashes, or whitespace
-        pkgver = pkgver.replace("-", ".").replace(":", ".")
 
         # 'actions' type composes the PKGBUILD from reusable steps instead of a
         # single monolithic template.
