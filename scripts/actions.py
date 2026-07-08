@@ -122,7 +122,7 @@ def _assemble_functions(bodies: dict[str, list[str]]) -> str:
     return "\n\n".join(out)
 
 
-def render(cfg: dict[str, Any], pkgver: str) -> str:
+def render(cfg: dict[str, Any], pkgver: str, pkgrel: int = 1) -> str:
     """Render a full PKGBUILD from an ``actions`` package config."""
     # `steps` accumulates each step's outputs so later steps can reference
     # {{ steps['<id>'].outputs.<name> }} in their `with:` values (render-time wiring).
@@ -183,6 +183,7 @@ def render(cfg: dict[str, Any], pkgver: str) -> str:
     return Template(TEMPLATE.read_text()).render(
         pkgname=cfg["pkgname"],
         pkgver=pkgver,
+        pkgrel=pkgrel,
         pkgdesc=cfg.get("pkgdesc", ""),
         arch=cfg.get("arch", ["any"]),
         url=cfg.get("url", ""),

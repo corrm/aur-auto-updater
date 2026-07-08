@@ -27,7 +27,8 @@ class TestRenderRealPackage:
     def test_metadata(self) -> None:
         assert "pkgname=3dgenstudio-git" in self.out
         assert "pkgver=r20260708.abc1234" in self.out
-        assert 'depends=("nodejs" "python")' in self.out
+        assert 'depends=("nodejs")' in self.out
+        assert 'optdepends=("python: local 3D-generation backend (python-server)")' in self.out
 
     def test_git_source_and_skip_checksum(self) -> None:
         assert '"3dgenstudio-git::git+https://github.com/visualbruno/3DGenStudio.git#branch=main"' in self.out
@@ -42,10 +43,12 @@ class TestRenderRealPackage:
         assert "npm ci" in self.out
         assert "npm run build" in self.out
 
-    def test_package_installs_tree_and_launcher(self) -> None:
+    def test_package_installs_prod_tree_and_launcher(self) -> None:
         assert "package() {" in self.out
         assert 'install -d "$pkgdir/opt/3dgenstudio-git"' in self.out
-        assert 'cp -a dist python-server server.js' in self.out
+        assert "npm prune --omit=dev" in self.out          # production deps only
+        assert 'cp -a --no-target-directory . "$pkgdir/opt/3dgenstudio-git"' in self.out
+        assert "rm -rf .git .env src" in self.out           # dev source dropped
         assert '/usr/bin/3dgenstudio' in self.out
 
     def test_launcher_script_roundtrips_through_b64(self) -> None:
@@ -54,8 +57,32 @@ class TestRenderRealPackage:
         b64 = line.split('<<< "')[1].rstrip('"')
         script = base64.b64decode(b64).decode()
         assert script.startswith("#!/bin/bash")
-        assert "python -m venv" in script
-        assert "node server.js" in script
+        assert 'node "$app/server.js"' in script            # runs the production server
+
+
+class TestRepublishLogic:
+    """Force-republish (pkgrel bump) mechanics."""
+
+    def test_pkgrel_threads_into_render(self) -> None:
+        cfg = {"pkgname": "x", "type": "actions",
+               "steps": [{"uses": "git-source", "with": {"url": "u"}}]}
+        assert "pkgrel=3" in actions.render(cfg, "1", pkgrel=3)
+
+    def test_signature_ignores_pkgrel_and_checksum(self) -> None:
+        pytest.importorskip("requests")
+        import build
+        a = "pkgname=x\npkgver=1\npkgrel=1\nsha256sums=('AAA')\nbuild() { make; }"
+        b = "pkgname=x\npkgver=1\npkgrel=9\nsha256sums=('BBB')\nbuild() { make; }"
+        c = "pkgname=x\npkgver=1\npkgrel=1\nbuild() { make install; }"
+        assert build._pkgbuild_signature(a) == build._pkgbuild_signature(b)  # only pkgrel/sum differ
+        assert build._pkgbuild_signature(a) != build._pkgbuild_signature(c)  # real change
+
+    def test_split_version(self) -> None:
+        pytest.importorskip("requests")
+        import build
+        assert build._split_version("1.2.3-4") == ("1.2.3", 4)
+        assert build._split_version("r8d4b6a2-1") == ("r8d4b6a2", 1)
+        assert build._split_version("") == (None, 1)
 
 
 class TestInputResolution:

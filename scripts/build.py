@@ -103,6 +103,79 @@ def sha256(url: str) -> str:
     return checksum
 
 
+def render_pkgbuild(cfg: dict[str, Any], pkgver: str, pkgrel: int, download_url: str, checksum: str) -> str:
+    """Render a package's full PKGBUILD text (pure — no writing, no state, no network).
+
+    Dispatches to the actions engine for ``type: actions``, otherwise renders the
+    per-type Jinja template. Kept side-effect free so it can be called both to compare
+    against the AUR's live PKGBUILD and to produce the final artifact.
+    """
+    if cfg["type"] == "actions":
+        from actions import render as render_actions
+        return render_actions(cfg, pkgver, pkgrel)
+
+    project_root = Path(__file__).parent.parent
+    tmpl_path = select_template(cfg)
+    if not Path(tmpl_path).is_absolute():
+        tmpl_path = project_root / tmpl_path
+    tmpl = Template(Path(tmpl_path).read_text())
+
+    debian_config = cfg.get("debian", {})
+    appimage_config = cfg.get("appimage", {})
+    binary_config = cfg.get("binary", {})
+
+    cfg_copy = {k: v for k, v in cfg.items() if k not in ("pypi", "npm", "appimage", "debian", "binary", "upstream", "install_files", "systemd_service", "shell_wrapper")}
+    for key in ("depends", "makedepends", "options", "conflicts", "provides"):
+        cfg_copy.setdefault(key, [])
+    return tmpl.render(
+        **cfg_copy,
+        pkgver=pkgver,
+        pkgrel=pkgrel,
+        download_url=download_url,
+        sha256=checksum,
+        debian_config=debian_config,
+        deb_version=debian_config.get("deb_version", ""),
+        extract_method=debian_config.get("extract_method", "ar"),
+        appimage_name=appimage_config.get("appimage_name", f"{appimage_config.get('binary_name', 'app')}.AppImage"),
+        binary_name=cfg.get("npm", {}).get("binary_name", "") or appimage_config.get("binary_name", "") or binary_config.get("binary_name", ""),
+        desktop=appimage_config.get("desktop", False),
+        icons=appimage_config.get("icons", False),
+        package_manager=(cfg.get("pypi", {}) or {}).get("package_manager", "pip") if cfg.get("type") == "pypi" else (cfg.get("npm", {}) or {}).get("package_manager", "npm"),
+        pypi_name=cfg.get("upstream", {}).get("pypi_name", ""),
+        npm_name=cfg.get("upstream", {}).get("npm_name", ""),
+        _pypi_name=cfg.get("upstream", {}).get("pypi_name", cfg.get("pkgname", "")),
+        install_files=cfg.get("install_files", []),
+        systemd_service=cfg.get("systemd_service", ""),
+        extract=(cfg.get("upstream", {}) or {}).get("extract", "none"),
+    )
+
+
+def _pkgbuild_signature(text: str) -> str:
+    """Normalize a PKGBUILD for change detection: drop pkgrel/checksum lines and blanks.
+
+    Two PKGBUILDs with the same signature package the same thing — only pkgrel or the
+    source checksum differs, which never on its own warrants a republish.
+    """
+    skip = ("pkgrel=", "sha256sums=", "sha512sums=", "b2sums=", "md5sums=")
+    return "\n".join(
+        s for s in (line.strip() for line in text.splitlines())
+        if s and not s.startswith(skip)
+    )
+
+
+def _split_version(version: str) -> tuple[str | None, int]:
+    """Split an AUR 'pkgver-pkgrel' string into (pkgver, pkgrel int). Defaults pkgrel=1."""
+    if not version:
+        return None, 1
+    if "-" in version:
+        ver, rel = version.rsplit("-", 1)
+        try:
+            return ver, int(rel)
+        except ValueError:
+            return ver, 1
+    return version, 1
+
+
 def build(pkgfile: str) -> dict[str, str] | None:
     """Build a package from configuration file.
 
@@ -148,144 +221,69 @@ def build(pkgfile: str) -> dict[str, str] | None:
         print(f"[{pkgname}] 🌐 Fetched upstream version: {tag}")
         print(f"[{pkgname}] 🔗 Download URL: {url}")
 
-        # Fast local gate: state already records this exact upstream version.
-        if last_version is not None and last_version == tag:
-            print(f"[{pkgname}] ✅ UP TO DATE - No changes detected")
-            print(f"[{pkgname}] ℹ️  Skipping build (version {tag} already processed)")
-            state["last_success"] = True
-            state["last_error"] = None
-            save_state(state_path, state)
-            return None
-
         # Target pkgver (Arch cannot contain hyphens/colons/slashes/whitespace).
         pkgver = (tag or "0").replace("-", ".").replace(":", ".")
 
-        # Authoritative, clone-free gate: ask the AUR its current version via the RPC
-        # API. This skips packages already published at the target version even when the
-        # local state cache is missing or stale — avoiding a needless clone + republish.
-        # (publish() still re-checks existence over SSH, so a flaky RPC can't mispublish.)
-        aur_ver = None
-        try:
-            aur_ver = aur.current_version(pkgname)
-        except Exception as e:
-            print(f"[{pkgname}] ⚠️  AUR RPC check failed ({e}); continuing without it")
-        in_aur = aur_ver is not None
+        project_root = Path(__file__).parent.parent
+        outdir = project_root / "build" / pkgname
 
-        if in_aur and tag is not None and aur_ver == pkgver:
-            print(f"[{pkgname}] ✅ AUR already at {aur_ver} - skipping (no clone)")
-            state["last_version"] = tag
-            state["last_success"] = True
-            state["last_error"] = None
+        # Render what we WOULD publish (pkgrel/checksum-agnostic) to get a comparable
+        # signature. Cheap — no source download happens for this comparison render.
+        compare = render_pkgbuild(cfg, pkgver, 1, url, upstream_sha256 or "SKIP")
+        sig = _pkgbuild_signature(compare)
+
+        # Authoritative, clone-free decision from what the AUR actually has (RPC for the
+        # version, cgit for the live PKGBUILD — no clone, no local-state dependence):
+        #   not published          -> create (pkgrel 1)
+        #   published, identical    -> skip (covers unchanged -git/VCS packages)
+        #   published, differs:
+        #       same pkgver         -> packaging changed: bump pkgrel (republish the fix)
+        #       new pkgver          -> upstream update: pkgrel 1
+        aur_ver, aur_rel, in_aur, live = None, 1, False, None
+        try:
+            aur_data = aur.info(pkgname)
+            if aur_data:
+                in_aur = True
+                aur_ver, aur_rel = _split_version(aur_data.get("Version", ""))
+                live = aur.remote_pkgbuild(pkgname)
+        except Exception as e:
+            print(f"[{pkgname}] ⚠️  AUR check failed ({e}); treating as needing publish")
+
+        if in_aur and live is not None and _pkgbuild_signature(live) == sig:
+            print(f"[{pkgname}] ✅ AUR already up to date at {aur_ver}-{aur_rel} - skipping (no clone)")
+            state.update({"last_version": tag, "last_success": True, "last_error": None})
             save_state(state_path, state)
             return None
 
-        is_new_package = not in_aur and last_version is None
-
-        if in_aur:
-            print(f"[{pkgname}] 📦 Package EXISTS in AUR (current: {aur_ver})")
-        elif last_version is None:
-            print(f"[{pkgname}] ✨ NEW PACKAGE - Will be created")
-
-        if is_new_package:
-            print(f"[{pkgname}] 🆕 VERSION CHANGE: None → {tag} (NEW PACKAGE)")
+        is_new_package = not in_aur
+        if not in_aur:
+            pkgrel = 1
+            print(f"[{pkgname}] ✨ NEW PACKAGE - Will be created ({pkgver})")
+        elif aur_ver == pkgver:
+            pkgrel = aur_rel + 1
+            print(f"[{pkgname}] 🩹 Same version {pkgver}, packaging changed → pkgrel {aur_rel} → {pkgrel}")
         else:
-            print(f"[{pkgname}] 🔄 VERSION CHANGE: {last_version} → {tag}")
+            pkgrel = 1
+            print(f"[{pkgname}] 🔄 VERSION CHANGE: {aur_ver} → {pkgver}")
 
-        # Use upstream SHA256 if available, otherwise calculate
+        # Real checksum (download only now that we know we're publishing).
         if upstream_sha256:
-            print(f"[{pkgname}] ✅ Using upstream SHA256: {upstream_sha256}")
             checksum = upstream_sha256
         else:
             print(f"[{pkgname}] 📥 Calculating SHA256 checksum...")
             checksum = sha256(url)
 
-        project_root = Path(__file__).parent.parent
-        outdir = project_root / "build" / pkgname
-
-        # 'actions' type composes the PKGBUILD from reusable steps instead of a
-        # single monolithic template.
-        if cfg["type"] == "actions":
-            from actions import render as render_actions
-            print(f"[{pkgname}] 🧩 Composing PKGBUILD from actions...")
-            rendered = render_actions(cfg, pkgver)
-            os.makedirs(outdir, exist_ok=True)
-            pkgbuild_path = outdir / "PKGBUILD"
-            Path(pkgbuild_path).write_text(rendered)
-            print(f"[{pkgname}] ✅ Generated PKGBUILD at: {pkgbuild_path}")
-            state.update({
-                "last_version": tag,
-                "last_asset_id": asset_id,
-                "last_success": True,
-                "last_error": None,
-                "retry_count": 0
-            })
-            save_state(state_path, state)
-            status = "created" if is_new_package else "updated"
-            print(f"[{pkgname}] SUCCESS - Package {status.upper()} (version {tag})")
-            return {"pkgname": pkgname, "status": status}
-
-        tmpl_path = select_template(cfg)
-        if not Path(tmpl_path).is_absolute():
-            tmpl_path = project_root / tmpl_path
-        print(f"[{pkgname}] 📝 Using template: {tmpl_path}")
-
-        tmpl = Template(Path(tmpl_path).read_text())
-
-        # Pass debian config if available
-        debian_config = cfg.get("debian", {})
-        deb_version = debian_config.get("deb_version", "")
-        extract_method = debian_config.get("extract_method", "ar")
-
-        # Pass appimage config fields individually
-        appimage_config = cfg.get("appimage", {})
-
-        # Pass binary config
-        binary_config = cfg.get("binary", {})
-
-        # Get extract method from upstream config
-        upstream_extract = (cfg.get("upstream", {}) or {}).get("extract", "none")
-
-        print(f"[{pkgname}] 🎨 Rendering PKGBUILD template...")
-        cfg_copy = {k: v for k, v in cfg.items() if k not in ("pypi", "npm", "appimage", "debian", "binary", "upstream", "install_files", "systemd_service", "shell_wrapper")}
-        # Ensure these fields are always available with defaults
-        cfg_copy.setdefault("depends", [])
-        cfg_copy.setdefault("makedepends", [])
-        cfg_copy.setdefault("options", [])
-        cfg_copy.setdefault("conflicts", [])
-        cfg_copy.setdefault("provides", [])
-        rendered = tmpl.render(
-            **cfg_copy,
-            pkgver=pkgver,
-            download_url=url,
-            sha256=checksum,
-            debian_config=debian_config,
-            deb_version=deb_version,
-            extract_method=extract_method,
-            appimage_name=appimage_config.get("appimage_name", f"{appimage_config.get('binary_name', 'app')}.AppImage"),
-            binary_name=cfg.get("npm", {}).get("binary_name", "") or appimage_config.get("binary_name", "") or binary_config.get("binary_name", ""),
-            desktop=appimage_config.get("desktop", False),
-            icons=appimage_config.get("icons", False),
-            package_manager=(cfg.get("pypi", {}) or {}).get("package_manager", "pip") if cfg.get("type") == "pypi" else (cfg.get("npm", {}) or {}).get("package_manager", "npm"),
-            pypi_name=cfg.get("upstream", {}).get("pypi_name", ""),
-            npm_name=cfg.get("upstream", {}).get("npm_name", ""),
-            _pypi_name=cfg.get("upstream", {}).get("pypi_name", cfg.get("pkgname", "")),
-            install_files=cfg.get("install_files", []),
-            systemd_service=cfg.get("systemd_service", ""),
-            extract=upstream_extract
-        )
+        print(f"[{pkgname}] 🎨 Rendering PKGBUILD (pkgrel={pkgrel})...")
+        rendered = render_pkgbuild(cfg, pkgver, pkgrel, url, checksum)
 
         os.makedirs(outdir, exist_ok=True)
-
         pkgbuild_path = outdir / "PKGBUILD"
         Path(pkgbuild_path).write_text(rendered)
         print(f"[{pkgname}] ✅ Generated PKGBUILD at: {pkgbuild_path}")
 
-        # Show PKGBUILD preview
         print(f"[{pkgname}] 📄 PKGBUILD preview (first 10 lines):")
-        for i, line in enumerate(rendered.split('\n')[:10], 1):
+        for line in rendered.split('\n')[:10]:
             print(f"         {line}")
-        if len(rendered.split('\n')) > 10:
-            print(f"         ... ({len(rendered.split(chr(10))) - 10} more lines)")
 
         state.update({
             "last_version": tag,
@@ -294,14 +292,10 @@ def build(pkgfile: str) -> dict[str, str] | None:
             "last_error": None,
             "retry_count": 0
         })
-
         save_state(state_path, state)
 
-        # Determine status based on whether this is a new package or update
         status = "created" if is_new_package else "updated"
-        status_emoji = "✨" if is_new_package else "🔄"
-        print(f"[{pkgname}] {status_emoji} SUCCESS - Package {status.upper()} (version {tag})")
-
+        print(f"[{pkgname}] ✅ SUCCESS - Package {status.upper()} (version {tag}-{pkgrel})")
         return {"pkgname": pkgname, "status": status}
 
     except Exception as e:

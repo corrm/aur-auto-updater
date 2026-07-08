@@ -1,6 +1,6 @@
 pkgname={{ pkgname }}
 pkgver={{ pkgver }}
-pkgrel=1
+pkgrel={{ pkgrel | default(1) }}
 pkgdesc="{{ pkgdesc }}"
 arch=({{ arch | join(' ') }})
 url="{{ url }}"

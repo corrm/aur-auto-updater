@@ -10,6 +10,7 @@ from pathlib import Path
 import requests  # type: ignore[import-untyped]
 
 RPC_INFO_URL = "https://aur.archlinux.org/rpc/v5/info"
+CGIT_PKGBUILD_URL = "https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD"
 
 
 def info(pkgname: str) -> dict | None:
@@ -48,6 +49,25 @@ def current_version(pkgname: str) -> str | None:
         return None
     version = data.get("Version", "")
     return version.rsplit("-", 1)[0] if version else None
+
+
+def remote_pkgbuild(pkgname: str) -> str | None:
+    """Fetch the AUR's live PKGBUILD text via cgit — no clone, no SSH.
+
+    Used to detect a packaging change (rendered PKGBUILD differs from what's published)
+    even when the pkgver is unchanged. Raises on network/HTTP errors other than 404.
+
+    Args:
+        pkgname: The AUR package name.
+
+    Returns:
+        The raw PKGBUILD text, or None if the package has no published PKGBUILD.
+    """
+    r = requests.get(CGIT_PKGBUILD_URL, params={"h": pkgname}, timeout=15)
+    if r.status_code == 404:
+        return None
+    r.raise_for_status()
+    return r.text
 
 
 def exists(pkgname: str) -> bool:
