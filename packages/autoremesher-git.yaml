@@ -1,0 +1,47 @@
+pkgname: autoremesher-git
+aur_repo: autoremesher-git
+arch: [x86_64]
+pkgdesc: Cross-platform automatic quad remeshing tool
+url: https://github.com/huxingyi/autoremesher
+license: [MIT]
+
+depends:
+  - hicolor-icon-theme
+  - libglvnd
+  - qt5-base
+  - tbb
+  - zlib
+conflicts: [autoremesher]
+provides: [autoremesher]
+
+upstream:
+  provider: git
+  url: https://github.com/huxingyi/autoremesher.git
+  branch: master
+
+type: actions
+steps:
+  - uses: git-source
+    name: Fetch source
+    with:
+      url: https://github.com/huxingyi/autoremesher.git
+      ref: master
+  - run: |
+      cd "$srcdir/autoremesher-git"
+      qmake-qt5 CONFIG+=release
+      make
+    name: Build AutoRemesher
+    phase: build
+  - run: |
+      cd "$srcdir/autoremesher-git"
+      install -Dm755 autoremesher "$pkgdir/usr/bin/autoremesher"
+      install -Dm644 ci/autoremesher.desktop \
+        "$pkgdir/usr/share/applications/autoremesher.desktop"
+      install -Dm644 ci/autoremesher.png \
+        "$pkgdir/usr/share/icons/hicolor/512x512/apps/autoremesher.png"
+      install -Dm644 ci/autoremesher.appdata.xml \
+        "$pkgdir/usr/share/metainfo/autoremesher.appdata.xml"
+      install -Dm644 LICENSE \
+        "$pkgdir/usr/share/licenses/autoremesher-git/LICENSE"
+    name: Install AutoRemesher
+    phase: package

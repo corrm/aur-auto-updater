@@ -60,6 +60,28 @@ class TestRenderRealPackage:
         assert 'node "$app/server.js"' in script            # runs the production server
 
 
+
+class TestRenderAutoRemesherGit:
+    """Render the shipped AutoRemesher VCS package end to end."""
+
+    def setup_method(self) -> None:
+        self.out = _render_pkg("autoremesher-git")
+
+    def test_metadata_and_source(self) -> None:
+        assert "pkgname=autoremesher-git" in self.out
+        assert 'depends=("hicolor-icon-theme" "libglvnd" "qt5-base" "tbb" "zlib")' in self.out
+        assert '"autoremesher-git::git+https://github.com/huxingyi/autoremesher.git#branch=master"' in self.out
+        assert "pkgver() {" in self.out
+
+    def test_build_and_install(self) -> None:
+        assert "qmake-qt5 CONFIG+=release" in self.out
+        assert "make" in self.out
+        assert '"$pkgdir/usr/bin/autoremesher"' in self.out
+        assert "/usr/share/applications/autoremesher.desktop" in self.out
+        assert "/usr/share/icons/hicolor/512x512/apps/autoremesher.png" in self.out
+        assert "/usr/share/metainfo/autoremesher.appdata.xml" in self.out
+        assert "/usr/share/licenses/autoremesher-git/LICENSE" in self.out
+
 class TestDesktopEntry:
     def test_desktop_entry_and_icon(self) -> None:
         cfg = {"pkgname": "myapp", "type": "actions", "steps": [
