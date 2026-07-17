@@ -1,0 +1,41 @@
+pkgname: bedrock-on-linux-bin
+aur_repo: bedrock-on-linux-bin
+arch: [x86_64]
+pkgdesc: Run Minecraft Bedrock for Windows on Linux with native Microsoft identity and multiplayer
+url: https://github.com/Wyze3306/BedrockOnLinux
+license: [MIT]
+
+depends:
+  - ca-certificates
+  - curl
+  - fontconfig
+  - fuse2
+  - glibc
+  - libx11
+  - libxft
+  - tar
+  - vulkan-driver
+  - xdg-utils
+  - xorg-xrandr
+  - zstd
+optdepends:
+  - "xorg-xwayland: launcher and game support in Wayland sessions"
+conflicts: [bedrock-on-linux]
+provides: [bedrock-on-linux]
+
+upstream:
+  provider: github
+  repo: Wyze3306/BedrockOnLinux
+  asset_regex: ^BedrockOnLinux-${pkgver}-x86_64\.AppImage$
+
+type: appimage
+appimage:
+  appimage_name: BedrockOnLinux-${pkgver}-x86_64.AppImage
+  binary_name: bedrock-on-linux
+  desktop: true
+  icons: true
+
+install_files:
+  - source: squashfs-root/usr/share/licenses/bedrock-on-linux/LICENSE
+    dest: /usr/share/licenses/bedrock-on-linux-bin/LICENSE
+    mode: "644"

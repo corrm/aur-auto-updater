@@ -11,6 +11,7 @@ import yaml
 
 sys.path.insert(0, "scripts")
 import actions  # noqa: E402
+from build import render_pkgbuild  # noqa: E402
 
 
 def _render_pkg(name: str) -> str:
@@ -81,6 +82,45 @@ class TestRenderAutoRemesherGit:
         assert "/usr/share/icons/hicolor/512x512/apps/autoremesher.png" in self.out
         assert "/usr/share/metainfo/autoremesher.appdata.xml" in self.out
         assert "/usr/share/licenses/autoremesher-git/LICENSE" in self.out
+
+
+class TestRenderBedrockOnLinuxBin:
+    """Render the shipped BedrockOnLinux AppImage package end to end."""
+
+    def setup_method(self) -> None:
+        cfg = yaml.safe_load(
+            Path("packages/bedrock-on-linux-bin.yaml").read_text()
+        )
+        self.out = render_pkgbuild(
+            cfg,
+            pkgver="2.0.0",
+            pkgrel=1,
+            download_url=(
+                "https://github.com/Wyze3306/BedrockOnLinux/releases/download/"
+                "v2.0.0/BedrockOnLinux-2.0.0-x86_64.AppImage"
+            ),
+            checksum="abc123",
+        )
+
+    def test_metadata_and_source(self) -> None:
+        assert "pkgname=bedrock-on-linux-bin" in self.out
+        assert '"fuse2"' in self.out
+        assert '"vulkan-driver"' in self.out
+        assert '"fontconfig"' in self.out
+        assert '"libx11"' in self.out
+        assert '"libxft"' in self.out
+        assert '"xorg-xrandr"' in self.out
+        assert 'optdepends=("xorg-xwayland: launcher and game support in Wayland sessions")' in self.out
+        assert "BedrockOnLinux-2.0.0-x86_64.AppImage" in self.out
+        assert "sha256sums=('abc123')" in self.out
+
+    def test_appimage_integration(self) -> None:
+        assert "./\"${_appimage}\" --appimage-extract" in self.out
+        assert '\"${pkgdir}/usr/bin/bedrock-on-linux\"' in self.out
+        assert "/usr/share/applications/bedrock-on-linux.desktop" in self.out
+        assert "Exec=bedrock-on-linux %U" in self.out
+        assert "/usr/share/pixmaps/bedrock-on-linux.${ext}" in self.out
+        assert "/usr/share/licenses/bedrock-on-linux-bin/LICENSE" in self.out
 
 class TestDesktopEntry:
     def test_desktop_entry_and_icon(self) -> None:
