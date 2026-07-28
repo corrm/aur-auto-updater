@@ -1,0 +1,28 @@
+pkgname: satisfactory-mod-manager-bin
+aur_repo: satisfactory-mod-manager-bin
+arch: [x86_64]
+pkgdesc: A tool for managing mods for Satisfactory
+url: https://github.com/satisfactorymodding/SatisfactoryModManager
+license: [GPL-3.0-only]
+
+depends:
+  - fuse2
+  - gst-plugins-good
+  - webkit2gtk-4.1
+
+conflicts: [satisfactory-mod-manager]
+provides: [satisfactory-mod-manager]
+
+upstream:
+  provider: github
+  repo: satisfactorymodding/SatisfactoryModManager
+  asset_regex: ^SatisfactoryModManager_linux_${arch}\.AppImage$
+  arch_map:
+    x86_64: amd64
+
+type: appimage
+appimage:
+  appimage_name: SatisfactoryModManager_linux_amd64.AppImage
+  binary_name: satisfactory-mod-manager
+  desktop: true
+  icons: true
