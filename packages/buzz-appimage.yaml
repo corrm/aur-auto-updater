@@ -1,0 +1,22 @@
+pkgname: buzz-appimage
+aur_repo: buzz-appimage
+arch: [x86_64]
+pkgdesc: Self-hostable workspace where humans and AI agents build together, on a relay you own
+url: https://github.com/block/buzz
+license: [Apache-2.0]
+
+depends:
+  - fuse2
+  - hicolor-icon-theme
+
+upstream:
+  provider: github
+  repo: block/buzz
+  asset_regex: ^Buzz_${pkgver}_${arch}\.AppImage$
+
+type: appimage
+appimage:
+  appimage_name: Buzz_${pkgver}_amd64.AppImage
+  binary_name: buzz
+  desktop: true
+  icons: true
