@@ -6,6 +6,7 @@ url: https://github.com/block/buzz
 license: [Apache-2.0]
 
 depends:
+  - faac
   - fuse2
   - hicolor-icon-theme
 
