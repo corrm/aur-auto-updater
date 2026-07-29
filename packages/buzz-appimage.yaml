@@ -9,6 +9,11 @@ depends:
   - fuse2
   - hicolor-icon-theme
 
+conflicts:
+  - buzz-bin
+  - buzz-git
+  - buzz-desktop-git
+
 upstream:
   provider: github
   repo: block/buzz
