@@ -9,6 +9,7 @@ depends:
   - faac
   - fuse2
   - hicolor-icon-theme
+  - xdg-utils
 
 conflicts:
   - buzz-bin
