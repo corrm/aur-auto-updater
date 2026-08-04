@@ -1,5 +1,7 @@
 """Unit tests for AUR auto-updater core modules."""
+import os
 import re
+import subprocess
 import sys
 from typing import Any
 
@@ -704,3 +706,213 @@ class TestBinaryTemplateNoPrepare:
         )
         assert 'prepare()' in rendered
         assert 'unzip -q' in rendered
+
+
+
+class TestAurTransientRetry:
+    """aur.py retries transient AUR/network git failures but not deterministic ones."""
+
+    @pytest.fixture(autouse=True)
+    def _aur(self, monkeypatch: Any) -> Any:
+        sys.path.insert(0, 'scripts')
+        import aur
+        monkeypatch.setattr(aur.time, 'sleep', lambda _s: None)
+        self.aur = aur
+        yield aur
+
+    def _stub_run(self, monkeypatch: Any, outcomes: list[tuple[int, str]]) -> list[list[str]]:
+        """Replace subprocess.run; each outcome is (returncode, stderr); last repeats."""
+        calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], cwd: str | None = None, capture_output: bool = False,
+                     text: bool = False, timeout: float | None = None) -> Any:
+            calls.append(list(cmd))
+            item = outcomes.pop(0) if len(outcomes) > 1 else outcomes[0]
+            if isinstance(item, Exception):
+                raise item
+            returncode, stderr = item
+            stdout = "A  PKGBUILD\n" if cmd[:2] == ["git", "status"] else ""
+            return subprocess.CompletedProcess(cmd, returncode, stdout, stderr)
+
+        monkeypatch.setattr(self.aur.subprocess, 'run', fake_run)
+        return calls
+
+    def _stub_repo(self, monkeypatch: Any, tmp_path: Any) -> str:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        monkeypatch.chdir(tmp_path)
+        return str(repo)
+
+    MAINTENANCE = ("The AUR is down due to maintenance. We will be back soon.\n"
+                   "fatal: Could not read from remote repository.")
+    PUSH_ARGS = ["git", "push", "origin", "master"]
+
+    def test_push_retries_transient_and_succeeds(self, monkeypatch: Any, tmp_path: Any) -> None:
+        monkeypatch.setattr(self.aur.subprocess, 'check_call', lambda cmd, cwd=None: 0)
+        calls = self._stub_run(monkeypatch, [(0, ""), (0, ""), (128, self.MAINTENANCE), (0, "")])
+        self.aur.commit_and_push(self._stub_repo(monkeypatch, tmp_path), "msg")
+        assert calls.count(self.PUSH_ARGS) == 2
+
+    def test_push_raises_after_exhausting_transient_retries(self, monkeypatch: Any, tmp_path: Any) -> None:
+        monkeypatch.setattr(self.aur.subprocess, 'check_call', lambda cmd, cwd=None: 0)
+        calls = self._stub_run(monkeypatch, [(0, ""), (0, ""), (128, self.MAINTENANCE)])
+        with pytest.raises(subprocess.CalledProcessError):
+            self.aur.commit_and_push(self._stub_repo(monkeypatch, tmp_path), "msg")
+        assert calls.count(self.PUSH_ARGS) == 3
+
+    def test_push_retries_timeouts(self, monkeypatch: Any, tmp_path: Any) -> None:
+        monkeypatch.setattr(self.aur.subprocess, 'check_call', lambda cmd, cwd=None: 0)
+        outcomes: list[Any] = [(0, ""), (0, ""), subprocess.TimeoutExpired(["git"], 60)]
+        calls = self._stub_run(monkeypatch, outcomes)
+        with pytest.raises(subprocess.CalledProcessError):
+            self.aur.commit_and_push(self._stub_repo(monkeypatch, tmp_path), "msg")
+        assert calls.count(self.PUSH_ARGS) == 3
+
+    def test_push_does_not_retry_non_fast_forward(self, monkeypatch: Any, tmp_path: Any) -> None:
+        monkeypatch.setattr(self.aur.subprocess, 'check_call', lambda cmd, cwd=None: 0)
+        calls = self._stub_run(monkeypatch, [(0, ""), (0, ""),
+                                             (128, "! [rejected] master -> master (non-fast-forward)")])
+        with pytest.raises(subprocess.CalledProcessError):
+            self.aur.commit_and_push(self._stub_repo(monkeypatch, tmp_path), "msg")
+        assert calls.count(self.PUSH_ARGS) == 1
+
+
+class TestAurExistsOutageAwareness:
+    """exists() must never guess 'not found' when the AUR is unreachable."""
+
+    @pytest.fixture(autouse=True)
+    def _aur(self, monkeypatch: Any) -> Any:
+        sys.path.insert(0, 'scripts')
+        import aur
+        monkeypatch.setattr(aur.time, 'sleep', lambda _s: None)
+        self.aur = aur
+        yield aur
+
+    def _stub_ls_remote(self, monkeypatch: Any, outcomes: list[tuple[int, str]]) -> list[list[str]]:
+        calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], cwd: str | None = None, capture_output: bool = False,
+                     text: bool = False, timeout: float | None = None) -> subprocess.CompletedProcess:
+            calls.append(list(cmd))
+            item = outcomes.pop(0) if len(outcomes) > 1 else outcomes[0]
+            returncode, stderr = item
+            return subprocess.CompletedProcess(cmd, returncode, "", stderr)
+
+        monkeypatch.setattr(self.aur.subprocess, 'run', fake_run)
+        return calls
+
+    MAINTENANCE = ("The AUR is down due to maintenance. We will be back soon.\n"
+                   "fatal: Could not read from remote repository.")
+
+    def test_exists_true_when_ls_remote_succeeds(self, monkeypatch: Any) -> None:
+        self._stub_ls_remote(monkeypatch, [(0, "")])
+        assert self.aur.exists("foo") is True
+
+    def test_exists_false_when_repo_not_found(self, monkeypatch: Any) -> None:
+        self._stub_ls_remote(monkeypatch,
+                             [(128, "ERROR: aur.git ssh://aur@aur.archlinux.org/foo.git: not found")])
+        assert self.aur.exists("foo") is False
+
+    def test_exists_raises_on_maintenance_after_retries(self, monkeypatch: Any) -> None:
+        calls = self._stub_ls_remote(monkeypatch, [(128, self.MAINTENANCE)])
+        with pytest.raises(self.aur.AurUnavailableError):
+            self.aur.exists("foo")
+        ls_remote_calls = [c for c in calls if "ls-remote" in c]
+        assert len(ls_remote_calls) == 3
+
+    def test_exists_raises_on_auth_failure_without_retry(self, monkeypatch: Any) -> None:
+        calls = self._stub_ls_remote(monkeypatch,
+                                     [(128, "aur@aur.archlinux.org: Permission denied (publickey).")])
+        with pytest.raises(self.aur.AurUnavailableError):
+            self.aur.exists("foo")
+        ls_remote_calls = [c for c in calls if "ls-remote" in c]
+        assert len(ls_remote_calls) == 1
+
+
+class TestTransientErrorClassification:
+    """_is_transient_git_error separates retryable outages from deterministic errors."""
+
+    @pytest.fixture(autouse=True)
+    def _aur(self) -> Any:
+        sys.path.insert(0, 'scripts')
+        import aur
+        self.aur = aur
+        yield aur
+
+    def test_maintenance_banner_is_transient(self) -> None:
+        assert self.aur._is_transient_git_error("The AUR is down due to maintenance.") is True
+
+    def test_could_not_read_remote_is_transient(self) -> None:
+        assert self.aur._is_transient_git_error("fatal: Could not read from remote repository.") is True
+
+    def test_permission_denied_is_definitive(self) -> None:
+        assert self.aur._is_transient_git_error("Permission denied (publickey).") is False
+
+    def test_repo_not_found_is_definitive(self) -> None:
+        assert self.aur._is_transient_git_error(
+            "ERROR: aur.git ssh://aur@aur.archlinux.org/x.git: not found") is False
+
+    def test_non_fast_forward_is_definitive(self) -> None:
+        assert self.aur._is_transient_git_error("! [rejected] (non-fast-forward)") is False
+
+
+class TestPublishUsesBuildDecision:
+    """publish() trusts the build step's RPC-authoritative new/existing answer."""
+
+    @pytest.fixture(autouse=True)
+    def _aur(self, monkeypatch: Any) -> Any:
+        sys.path.insert(0, 'scripts')
+        import aur
+        self.aur = aur
+        yield aur
+
+    def _stage(self, monkeypatch: Any, tmp_path: Any) -> list[str]:
+        monkeypatch.chdir(tmp_path)
+        pkgbuild = tmp_path / "build" / "pkg" / "PKGBUILD"
+        pkgbuild.parent.mkdir(parents=True)
+        pkgbuild.write_text("# PKGBUILD\n")
+
+        def no_ssh_check(pkgname: str) -> bool:
+            raise AssertionError("SSH existence check must be skipped when is_new is given")
+
+        def fake_clone(repo: str, dest: str | None = None) -> str:
+            target = dest or f"aur-repos/{repo}"
+            os.makedirs(target, exist_ok=True)
+            return target
+
+        monkeypatch.setattr(self.aur, 'clone', fake_clone)
+        monkeypatch.setattr(self.aur, 'pull', lambda repo_path: None)
+        messages: list[str] = []
+        monkeypatch.setattr(self.aur, 'exists', no_ssh_check)
+        monkeypatch.setattr(self.aur, 'generate_srcinfo', lambda repo_path: None)
+        monkeypatch.setattr(self.aur, 'commit_and_push',
+                            lambda repo_path, msg: messages.append(msg))
+        return messages
+
+    def test_existing_package_skips_ssh_check_and_uses_update_message(self, monkeypatch: Any,
+                                                                       tmp_path: Any) -> None:
+        messages = self._stage(monkeypatch, tmp_path)
+        result = self.aur.publish("pkg", is_new=False)
+        assert result["status"] == "published"
+        assert messages == ["upstream update: pkg"]
+
+    def test_new_package_skips_ssh_check_and_uses_initial_message(self, monkeypatch: Any,
+                                                                  tmp_path: Any) -> None:
+        messages = self._stage(monkeypatch, tmp_path)
+        result = self.aur.publish("pkg", is_new=True)
+        assert result["status"] == "published"
+        assert messages == ["initial package upload: pkg"]
+
+    def test_publish_all_threads_build_status_into_publish(self, monkeypatch: Any,
+                                                           tmp_path: Any) -> None:
+        monkeypatch.chdir(tmp_path)
+        calls: list[tuple[str, bool | None]] = []
+        monkeypatch.setattr(
+            self.aur, 'publish',
+            lambda pkgname, build_dir="build", is_new=None:
+                calls.append((pkgname, is_new)) or {"pkgname": pkgname, "status": "published"})
+        report = self.aur.publish_all([{"pkgname": "a", "status": "created"},
+                                       {"pkgname": "b", "status": "updated"},
+                                       {"pkgname": "c"}])
+        assert calls == [("a", True), ("b", False), ("c", None)]
+        assert len(report["published"]) == 3

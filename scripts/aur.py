@@ -5,12 +5,88 @@ import os
 import re
 import shutil
 import subprocess
+import time
+from typing import Any
 from pathlib import Path
 
 import requests  # type: ignore[import-untyped]
 
 RPC_INFO_URL = "https://aur.archlinux.org/rpc/v5/info"
 CGIT_PKGBUILD_URL = "https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD"
+
+# Signatures of deterministic git/SSH failures — retrying these never helps.
+_DEFINITIVE_ERROR_MARKERS = (
+    "not found",
+    "does not appear to be a git repository",
+    "permission denied",
+    "publickey",
+    "host key verification failed",
+    "non-fast-forward",
+)
+
+# Signatures of transient failures worth retrying (AUR maintenance, network hiccups).
+_TRANSIENT_ERROR_MARKERS = (
+    "the aur is down",
+    "down for maintenance",
+    "could not read from remote repository",
+    "connection reset",
+    "connection refused",
+    "connection timed out",
+    "timed out",
+    "temporary failure in name resolution",
+    "could not resolve host",
+    "service unavailable",
+    "connection closed by remote host",
+    "broken pipe",
+    "network is unreachable",
+)
+
+
+class AurUnavailableError(RuntimeError):
+    """The AUR could not be reached (maintenance/outage); state is unknown."""
+
+
+def _is_transient_git_error(stderr: str) -> bool:
+    """True when git stderr looks transient (retryable) rather than deterministic."""
+    lowered = stderr.lower()
+    if any(marker in lowered for marker in _DEFINITIVE_ERROR_MARKERS):
+        return False
+    return any(marker in lowered for marker in _TRANSIENT_ERROR_MARKERS)
+
+
+def _git_run_with_retry(
+    cmd: list[str],
+    label: str,
+    cwd: str | None = None,
+    attempts: int = 3,
+    backoff: float = 5.0,
+    timeout: float | None = None,
+    on_retry: Any = None,
+) -> subprocess.CompletedProcess:
+    """Run a network-bound git command, retrying transient AUR/network failures.
+
+    Args:
+        on_retry: Optional zero-arg callable invoked before each retry sleep
+            (e.g. to remove a partial clone directory).
+
+    Returns the final CompletedProcess (success or not); raises only when the
+    git binary itself is missing.
+    """
+    result: subprocess.CompletedProcess | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            result = subprocess.CompletedProcess(cmd, 124, "", f"{label} timed out after {timeout}s")
+        if result.returncode == 0 or attempt == attempts or not _is_transient_git_error(result.stderr):
+            return result
+        delay = backoff * attempt
+        print(f"  [AUR] ⚠️  {label} failed (attempt {attempt}/{attempts}), transient error — retrying in {delay:.0f}s")
+        print(f"  [AUR] 📋 stderr: {result.stderr.strip()}")
+        if on_retry is not None:
+            on_retry()
+        time.sleep(delay)
+    return result
 
 
 def info(pkgname: str) -> dict | None:
@@ -80,70 +156,51 @@ def exists(pkgname: str) -> bool:
         pkgname: The name of the AUR package to check.
 
     Returns:
-        True if the package exists in AUR, False otherwise.
+        True if the package exists in AUR, False if it definitively does not.
+
+    Raises:
+        AurUnavailableError: When the check cannot complete (AUR maintenance or
+            outage, SSH misconfiguration). Existence is unknown — callers must
+            not guess, or a live package gets misclassified as new.
     """
     url = f"ssh://aur@aur.archlinux.org/{pkgname}.git"
     print(f"  [AUR] 🔍 Checking package existence via SSH: {url}...")
 
     try:
-        result = subprocess.run(
+        result = _git_run_with_retry(
             ["git", "ls-remote", url],
-            capture_output=True,
-            text=True,
+            label="git ls-remote",
+            attempts=3,
+            backoff=3.0,
             timeout=15,
         )
+    except FileNotFoundError:
+        print(f"  [AUR] ❌ Git command not found")
+        raise AurUnavailableError("git executable not found") from None
 
-        if result.returncode == 0:
-            print(f"  [AUR] ✅ Package EXISTS in AUR")
-            return True
+    if result.returncode == 0:
+        print(f"  [AUR] ✅ Package EXISTS in AUR")
+        return True
 
-        stderr_lower = result.stderr.lower()
+    stderr_lower = result.stderr.lower()
 
-        if "not found" in stderr_lower or "does not appear to be a git repository" in stderr_lower:
-            print(f"  [AUR] ❌ Package NOT found in AUR (new package)")
-            return False
-
-        if (
-            "permission denied" in stderr_lower
-            or "publickey" in stderr_lower
-            or "host key verification failed" in stderr_lower
-        ):
-            print(f"  [AUR] ❌ SSH authentication FAILED")
-            print(f"  [AUR] 🔎 Debug info:")
-            print(f"  [AUR]     URL: {url}")
-            print(f"  [AUR]     Return code: {result.returncode}")
-            print(f"  [AUR]     Stderr: {result.stderr.strip()}")
-            print(f"  [AUR]     Stdout: {result.stdout.strip() if result.stdout.strip() else '(empty)'}")
-
-            if "permission denied (publickey)" in stderr_lower:
-                print(f"  [AUR] 💡 Possible causes:")
-                print(f"  [AUR]     - AUR_SSH_PRIVATE_KEY secret is missing or empty")
-                print(f"  [AUR]     - SSH key format is incorrect (should be ED25519 or RSA)")
-                print(f"  [AUR]     - SSH key permissions are wrong (should be 600)")
-                print(f"  [AUR]     - Key is not added to AUR account")
-            elif "host key verification failed" in stderr_lower:
-                print(f"  [AUR] 💡 Possible causes:")
-                print(f"  [AUR]     - known_hosts file is missing aur.archlinux.org")
-                print(f"  [AUR]     - SSH strict host key checking is enabled")
-
-            print(f"  [AUR] ⚠️  Assuming package does not exist due to SSH error")
-            return False
-
-        print(f"  [AUR] ⚠️  Git check failed: {result.stderr.strip()}")
+    if "not found" in stderr_lower or "does not appear to be a git repository" in stderr_lower:
         print(f"  [AUR] ❌ Package NOT found in AUR (new package)")
         return False
 
-    except subprocess.TimeoutExpired:
-        print(f"  [AUR] ⚠️  Git check timed out")
-        print(f"  [AUR] ⚠️  Assuming package does not exist")
-        return False
-    except FileNotFoundError:
-        print(f"  [AUR] ❌ Git command not found")
-        return False
-    except Exception as e:
-        print(f"  [AUR] ❌ Error checking package: {type(e).__name__}: {e}")
-        print(f"  [AUR] ⚠️  Assuming package does not exist")
-        return False
+    if (
+        "permission denied" in stderr_lower
+        or "publickey" in stderr_lower
+        or "host key verification failed" in stderr_lower
+    ):
+        print(f"  [AUR] ❌ SSH authentication FAILED")
+        print(f"  [AUR] 💡 Check the AUR_SSH_PRIVATE_KEY secret (format, permissions, registered on AUR)")
+        print(f"  [AUR] 💡 Check known_hosts contains aur.archlinux.org")
+        print(f"  [AUR] 📋 stderr: {result.stderr.strip()}")
+        raise AurUnavailableError(f"SSH authentication failed while checking {pkgname}")
+
+    print(f"  [AUR] ⚠️  Existence check failed (AUR down or unreachable): {result.stderr.strip()}")
+    raise AurUnavailableError(f"Could not check AUR existence for {pkgname}: {result.stderr.strip()}")
 
 
 def clone(repo: str, dest: str = None) -> str:
@@ -168,11 +225,16 @@ def clone(repo: str, dest: str = None) -> str:
         shutil.rmtree(dest)
 
     print(f"  [AUR] 📥 Cloning {repo} from AUR...")
-    subprocess.check_call([
-        "git", "clone",
-        f"ssh://aur@aur.archlinux.org/{repo}.git",
-        dest,
-    ])
+    result = _git_run_with_retry(
+        ["git", "clone", f"ssh://aur@aur.archlinux.org/{repo}.git", dest],
+        label=f"clone {repo}",
+        on_retry=lambda: shutil.rmtree(dest, ignore_errors=True),
+    )
+    if result.returncode != 0:
+        print(f"  [AUR] ❌ Clone failed: {result.stderr.strip()}")
+        raise subprocess.CalledProcessError(
+            result.returncode, "git clone", output=result.stdout, stderr=result.stderr
+        )
     # Shallow clone (--depth 1) leaves HEAD detached on git >=2.48 and
     # doesn't set up remote tracking refs properly; AUR repos are tiny
     # so a full clone is fast and avoids all these issues.
@@ -196,7 +258,12 @@ def pull(repo_path: str) -> None:
         subprocess.CalledProcessError: If git pull fails.
     """
     print(f"  [AUR] 🔄 Pulling latest changes...")
-    subprocess.check_call(["git", "pull", "origin", "master"], cwd=repo_path)
+    result = _git_run_with_retry(["git", "pull", "origin", "master"], label="git pull", cwd=repo_path)
+    if result.returncode != 0:
+        print(f"  [AUR] ❌ Pull failed: {result.stderr.strip()}")
+        raise subprocess.CalledProcessError(
+            result.returncode, "git pull", output=result.stdout, stderr=result.stderr
+        )
 
 
 def generate_srcinfo(repo_path: str) -> None:
@@ -253,7 +320,7 @@ def commit_and_push(repo_path: str, msg: str) -> None:
         raise subprocess.CalledProcessError(result.returncode, "git commit", output=result.stderr)
 
     print(f"  [AUR] 🚀 Pushing to AUR...")
-    result = subprocess.run(["git", "push", "origin", "master"], cwd=repo_path, capture_output=True, text=True)
+    result = _git_run_with_retry(["git", "push", "origin", "master"], label="git push", cwd=repo_path)
     if result.returncode != 0:
         print(f"  [AUR] ❌ Git push failed!")
         print(f"  [AUR] 📋 stderr: {result.stderr.strip()}")
@@ -261,12 +328,16 @@ def commit_and_push(repo_path: str, msg: str) -> None:
         raise subprocess.CalledProcessError(result.returncode, "git push", output=result.stderr, stderr=result.stderr)
 
 
-def publish(pkgname: str, build_dir: str = "build") -> dict[str, str]:
+def publish(pkgname: str, build_dir: str = "build", is_new: bool | None = None) -> dict[str, str]:
     """Publish a built package to AUR.
 
     Args:
         pkgname: Name of the package to publish.
         build_dir: Directory containing built PKGBUILD files.
+        is_new: Whether the package is unpublished in AUR. Pass the build step's
+            RPC-authoritative answer (True = created, False = updated) so a flaky
+            SSH check can't flip an existing package into the new-package path.
+            When None, falls back to an SSH existence check.
 
     Returns:
         Dictionary with 'pkgname' and 'status'/'error' keys.
@@ -276,7 +347,12 @@ def publish(pkgname: str, build_dir: str = "build") -> dict[str, str]:
     print(f"{'='*60}")
 
     try:
-        in_aur = exists(pkgname)
+        if is_new is None:
+            in_aur = exists(pkgname)
+        else:
+            in_aur = not is_new
+            note = "new" if is_new else "existing"
+            print(f"[{pkgname}] 🔎 Skipping SSH existence check — build's AUR RPC check says {note}")
         repo_path = f"aur-repos/{pkgname}"
 
         if in_aur:
@@ -344,7 +420,9 @@ def publish_all(packages: list[dict[str, str]], build_dir: str = "build") -> dic
         if not pkgname:
             continue
 
-        result = publish(pkgname, build_dir)
+        status = pkg.get("status")
+        is_new = (status == "created") if status in ("created", "updated") else None
+        result = publish(pkgname, build_dir, is_new=is_new)
 
         if "error" in result:
             failures.append(result)
