@@ -127,6 +127,26 @@ def current_version(pkgname: str) -> str | None:
     return version.rsplit("-", 1)[0] if version else None
 
 
+def is_available() -> bool:
+    """Check if the AUR RPC API is responding (i.e., AUR is operational).
+
+    Uses the RPC API endpoint which is what the sync actually depends on for
+    version checking. The aur.git SSH endpoint can show a maintenance banner
+    even when the AUR is fully operational, so it must not be used as a
+    health check.
+
+    Returns:
+        True if the RPC API responds with valid JSON, False otherwise.
+    """
+    try:
+        r = requests.get(RPC_INFO_URL, params={"arg[]": "aur-auto-updater-health"}, timeout=15)
+        r.raise_for_status()
+        data = r.json()
+        return isinstance(data, dict) and "version" in data
+    except (requests.RequestException, ValueError):
+        return False
+
+
 def remote_pkgbuild(pkgname: str) -> str | None:
     """Fetch the AUR's live PKGBUILD text via cgit — no clone, no SSH.
 

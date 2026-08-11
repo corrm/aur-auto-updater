@@ -856,6 +856,56 @@ class TestTransientErrorClassification:
         assert self.aur._is_transient_git_error("! [rejected] (non-fast-forward)") is False
 
 
+class TestIsAvailable:
+    """is_available() uses the RPC API — the actual sync dependency — not SSH."""
+
+    @pytest.fixture(autouse=True)
+    def _aur(self) -> Any:
+        sys.path.insert(0, 'scripts')
+        import aur
+        self.aur = aur
+        yield aur
+
+    def _stub_rpc(self, monkeypatch: Any, status: int, body: str) -> None:
+        class FakeResponse:
+            def raise_for_status(self) -> None:
+                if status >= 400:
+                    raise self.aur.requests.exceptions.HTTPError(f"HTTP {status}")
+
+            def json(self) -> Any:
+                import json
+                return json.loads(body)
+
+        monkeypatch.setattr(self.aur.requests, 'get',
+                            lambda url, params=None, timeout=None: FakeResponse())
+
+    def test_true_when_rpc_responds_with_version(self, monkeypatch: Any) -> None:
+        self._stub_rpc(monkeypatch, 200, '{"version":5,"resultcount":0,"results":[]}')
+        assert self.aur.is_available() is True
+
+    def test_false_when_rpc_returns_html_maintenance_page(self, monkeypatch: Any) -> None:
+        class FakeResponse:
+            def raise_for_status(self) -> None:
+                pass
+
+            def json(self) -> Any:
+                raise ValueError("not JSON")
+
+        monkeypatch.setattr(self.aur.requests, 'get',
+                            lambda url, params=None, timeout=None: FakeResponse())
+        assert self.aur.is_available() is False
+
+    def test_false_when_rpc_connection_fails(self, monkeypatch: Any) -> None:
+        def raise_conn_error(url, params=None, timeout=None) -> None:
+            raise self.aur.requests.exceptions.ConnectionError("DNS failed")
+
+        monkeypatch.setattr(self.aur.requests, 'get', raise_conn_error)
+        assert self.aur.is_available() is False
+
+    def test_false_when_rpc_returns_no_version_key(self, monkeypatch: Any) -> None:
+        self._stub_rpc(monkeypatch, 200, '{"error": "rate limited"}')
+        assert self.aur.is_available() is False
+
 class TestPublishUsesBuildDecision:
     """publish() trusts the build step's RPC-authoritative new/existing answer."""
 

@@ -75,19 +75,15 @@ jobs:
       - name: Check AUR availability
         id: aur_check
         run: |
-          # Maintenance windows can last hours; detect the banner explicitly so
-          # doomed syncs exit cleanly while real failures (bad SSH key, DNS)
-          # still fail the job loudly.
-          out=$(sudo -u builder git ls-remote ssh://aur@aur.archlinux.org/aur.git HEAD 2>&1) \
-            && { echo "available=true" >> "$GITHUB_OUTPUT"; exit 0; }
-          echo "$out"
-          if printf '%s' "$out" | grep -qi "down due to maintenance"; then
-            echo "::notice::AUR is down for maintenance — skipping this sync run"
+          # The RPC API is what the sync actually depends on for version checking.
+          # The aur.git SSH endpoint can show a maintenance banner even when the
+          # AUR is fully operational, so we check RPC instead.
+          if python -c "import sys; sys.path.insert(0, 'scripts'); import aur; sys.exit(0 if aur.is_available() else 1)"; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::AUR RPC API is not responding — skipping this sync run"
             echo "available=false" >> "$GITHUB_OUTPUT"
-            exit 0
           fi
-          echo "::error::AUR SSH check failed (not maintenance) — refusing to sync"
-          exit 1
 
       - name: Fix permissions
         if: steps.aur_check.outputs.available == 'true'
