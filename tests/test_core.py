@@ -355,6 +355,139 @@ class TestAssetRegexInterpolation:
         for key, value in interpolate.items():
             asset_regex = asset_regex.replace(f"${{{key}}}", value)
         assert asset_regex == ".*AppImage$"
+
+
+class TestGithubReleaseFallback:
+    """github_latest() falls back to scanning releases when latest has no asset match.
+
+    Regression: upstream repos (e.g. BedrockOnLinux) publish non-package releases
+    (Proton engine builds) that become /releases/latest but carry no AppImage.
+    The function must scan recent releases to find the newest one with the asset.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _upstream(self, monkeypatch: Any) -> Any:
+        sys.path.insert(0, 'scripts')
+        import upstream
+        self.upstream = upstream
+        yield upstream
+
+    LATEST_NO_ASSET = {
+        "tag_name": "engine-wow64-archs-native14",
+        "prerelease": False,
+        "draft": False,
+        "assets": [
+            {"name": "GDK-Proton-xuser-wow64-archs-native14.tar.gz",
+             "browser_download_url": "https://example.com/proton.tar.gz",
+             "id": 999, "digest": ""},
+        ],
+    }
+
+    RELEASES_LIST = [
+        {
+            "tag_name": "engine-wow64-archs-native14",
+            "prerelease": False,
+            "draft": False,
+            "assets": [
+                {"name": "GDK-Proton-xuser-wow64-archs-native14.tar.gz",
+                 "browser_download_url": "https://example.com/proton.tar.gz",
+                 "id": 999, "digest": ""},
+            ],
+        },
+        {
+            "tag_name": "nightly",
+            "prerelease": True,
+            "draft": False,
+            "assets": [
+                {"name": "BedrockOnLinux-2.1.3-x86_64.AppImage",
+                 "browser_download_url": "https://example.com/nightly.AppImage",
+                 "id": 100, "digest": ""},
+            ],
+        },
+        {
+            "tag_name": "v2.1.3",
+            "prerelease": False,
+            "draft": False,
+            "assets": [
+                {"name": "BedrockOnLinux-2.1.3-x86_64.AppImage",
+                 "browser_download_url": "https://example.com/BedrockOnLinux-2.1.3-x86_64.AppImage",
+                 "id": 42, "digest": "sha256:abc123"},
+            ],
+        },
+    ]
+
+    def _mock_requests(self, monkeypatch: Any) -> list[str]:
+        """Mock requests.get to return latest (no asset) then releases list."""
+        urls: list[str] = []
+
+        class FakeResponse:
+            def __init__(self, payload: Any) -> None:
+                self._payload = payload
+
+            def raise_for_status(self) -> None:
+                pass
+
+            def json(self) -> Any:
+                return self._payload
+
+        def fake_get(url: str, **kwargs: Any) -> FakeResponse:
+            urls.append(url)
+            if "/releases/latest" in url:
+                return FakeResponse(self.LATEST_NO_ASSET)
+            return FakeResponse(self.RELEASES_LIST)
+
+        monkeypatch.setattr(self.upstream.requests, 'get', fake_get)
+        return urls
+
+    def test_falls_back_to_release_list(self, monkeypatch: Any) -> None:
+        self._mock_requests(monkeypatch)
+        tag, url, asset_id, sha256 = self.upstream.github_latest(
+            "Wyze3306/BedrockOnLinux",
+            r"^BedrockOnLinux-${pkgver}-x86_64\.AppImage$",
+        )
+        assert tag == "2.1.3"
+        assert url == "https://example.com/BedrockOnLinux-2.1.3-x86_64.AppImage"
+        assert asset_id == 42
+        assert sha256 == "abc123"
+
+    def test_skips_prerelease_releases_in_fallback(self, monkeypatch: Any) -> None:
+        self._mock_requests(monkeypatch)
+        tag, url, _, _ = self.upstream.github_latest(
+            "Wyze3306/BedrockOnLinux",
+            r"^BedrockOnLinux-${pkgver}-x86_64\.AppImage$",
+        )
+        assert tag == "2.1.3"
+
+    def test_latest_release_still_preferred_when_match_exists(self, monkeypatch: Any) -> None:
+        latest_with_asset = {
+            "tag_name": "v3.0.0",
+            "prerelease": False,
+            "draft": False,
+            "assets": [
+                {"name": "BedrockOnLinux-3.0.0-x86_64.AppImage",
+                 "browser_download_url": "https://example.com/3.0.0.AppImage",
+                 "id": 77, "digest": ""},
+            ],
+        }
+
+        class FakeResponse:
+            def raise_for_status(self) -> None:
+                pass
+
+            def json(self) -> Any:
+                return latest_with_asset
+
+        monkeypatch.setattr(self.upstream.requests, 'get',
+                            lambda url, **kw: FakeResponse())
+        tag, url, asset_id, sha256 = self.upstream.github_latest(
+            "Wyze3306/BedrockOnLinux",
+            r"^BedrockOnLinux-${pkgver}-x86_64\.AppImage$",
+        )
+        assert tag == "3.0.0"
+        assert asset_id == 77
+        assert sha256 is None
+
+
 class TestArchMapping:
     """Tests for arch_map configuration that maps Arch arch names to GitHub asset names."""
 

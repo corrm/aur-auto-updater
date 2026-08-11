@@ -15,8 +15,43 @@ DEFAULT_ARCH_MAP = {
 }
 
 
+def _match_asset_in_release(
+    release: dict[str, Any],
+    asset_regex: str,
+    arch_values_to_try: list[str | None],
+) -> tuple[str | None, str, int | None, str | None] | None:
+    """Try to match an asset in a single release. Returns match tuple or None."""
+    raw_tag = release["tag_name"]
+    tag = re.sub(r'^[a-zA-Z_-]*v?', '', raw_tag).lstrip('-')
+
+    for arch_value in arch_values_to_try:
+        asset_regex_try = asset_regex
+        if "${pkgver}" in asset_regex_try:
+            asset_regex_try = asset_regex_try.replace("${pkgver}", tag)
+        if arch_value:
+            placeholder = "${arch}"
+            if placeholder in asset_regex_try:
+                asset_regex_try = asset_regex_try.replace(placeholder, arch_value)
+            print(f"  [GitHub] 🔄 Trying arch: {asset_regex_try}")
+
+        for a in release["assets"]:
+            if re.match(asset_regex_try, a["name"]):
+                sha256 = None
+                digest = a.get("digest", "")
+                if digest.startswith("sha256:"):
+                    sha256 = digest[7:]
+                print(f"  [GitHub] ✅ Matching asset: {a['name']}")
+                return tag, a["browser_download_url"], a["id"], sha256
+
+    return None
+
+
 def github_latest(repo: str, asset_regex: str, interpolate: dict[str, str] | None = None, arch_map: dict[str, str] | None = None) -> tuple[str | None, str, int | None, str | None]:
     """Fetch latest release info from GitHub.
+
+    If the latest release contains no matching asset (e.g. upstream publishes
+    non-package releases like Proton builds alongside versioned releases),
+    falls back to scanning recent releases for the newest one that does.
 
     Args:
         repo: GitHub repository in format 'owner/repo'
@@ -30,60 +65,47 @@ def github_latest(repo: str, asset_regex: str, interpolate: dict[str, str] | Non
     Raises:
         RuntimeError: If no matching asset is found
     """
-    url = f"https://api.github.com/repos/{repo}/releases/latest"
-    print(f"  [GitHub] 📡 Fetching latest release from: {repo}")
-    r = requests.get(url, timeout=30)
-    r.raise_for_status()
-
-    data = r.json()
-    raw_tag = data["tag_name"]
-    tag = re.sub(r'^[a-zA-Z_-]*v?', '', raw_tag).lstrip('-')
-
-    print(f"  [GitHub] 🏷️  Found tag: {tag} (from {raw_tag})")
-
     # Use custom arch_map if provided, otherwise fall back to DEFAULT_ARCH_MAP
     effective_arch_map = arch_map if arch_map is not None else DEFAULT_ARCH_MAP
 
     # Build list of arch values to try: original first, then mapped fallback
-    arch_values_to_try = []
+    arch_values_to_try: list[str | None] = []
     if interpolate and "arch" in interpolate:
         original_arch = interpolate["arch"]
         arch_values_to_try.append(original_arch)
-        # Try mapped arch if different
         if original_arch in effective_arch_map:
             mapped = effective_arch_map[original_arch]
             if mapped != original_arch:
                 arch_values_to_try.append(mapped)
 
-    # If no interpolation, try once with original regex
     if not arch_values_to_try:
         arch_values_to_try = [None]
 
-    # Try each arch value until we find a match
-    for arch_value in arch_values_to_try:
-        asset_regex_try = asset_regex
-        # Substitute ${pkgver} with the stripped tag (e.g. "0.6.5", not "v0.6.5")
-        # so asset names like "Terax_0.6.5_amd64.AppImage" can be matched.
-        # The 'tag' variable already has the 'v' prefix stripped by the regex on line 39.
-        if "${pkgver}" in asset_regex_try:
-            asset_regex_try = asset_regex_try.replace("${pkgver}", tag)
-        if arch_value:
-            for key, value in {"arch": arch_value}.items():
-                placeholder = f"${{{key}}}"
-                if placeholder in asset_regex_try:
-                    asset_regex_try = asset_regex_try.replace(placeholder, value)
+    # Try /releases/latest first
+    url = f"https://api.github.com/repos/{repo}/releases/latest"
+    print(f"  [GitHub] 📡 Fetching latest release from: {repo}")
+    r = requests.get(url, timeout=30)
+    r.raise_for_status()
+    data = r.json()
 
-            print(f"  [GitHub] 🔄 Trying arch: {asset_regex_try}")
+    print(f"  [GitHub] 🏷️  Found tag: {data['tag_name']}")
+    result = _match_asset_in_release(data, asset_regex, arch_values_to_try)
+    if result is not None:
+        return result
 
-        for a in data["assets"]:
-            if re.match(asset_regex_try, a["name"]):
-                # Extract SHA256 from digest field (format: "sha256:...")
-                sha256 = None
-                digest = a.get("digest", "")
-                if digest.startswith("sha256:"):
-                    sha256 = digest[7:]  # Remove "sha256:" prefix
-                print(f"  [GitHub] ✅ Matching asset: {a['name']}")
-                return tag, a["browser_download_url"], a["id"], sha256
+    # Fallback: scan recent releases for the newest one carrying the asset
+    print(f"  [GitHub] 🔍 No match in latest release, scanning recent releases...")
+    list_url = f"https://api.github.com/repos/{repo}/releases?per_page=10"
+    r = requests.get(list_url, timeout=30)
+    r.raise_for_status()
+
+    for release in r.json():
+        if release.get("prerelease") or release.get("draft"):
+            continue
+        result = _match_asset_in_release(release, asset_regex, arch_values_to_try)
+        if result is not None:
+            print(f"  [GitHub] 📦 Found in release: {release['tag_name']}")
+            return result
 
     raise RuntimeError(f"No matching asset found (pattern: {asset_regex})")
 
