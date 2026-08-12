@@ -51,7 +51,7 @@ prepare() {
 
 package() {
     cd "${srcdir}/deb_contents"
-    if [[ ! -f data.tar.* ]]; then
+    if ! compgen -G "data.tar.*" > /dev/null; then
         echo "Error: data.tar.* not found in the Debian package."
         exit 1
     fi
