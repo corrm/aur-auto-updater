@@ -93,7 +93,9 @@ jobs:
 
       - name: Run sync
         if: steps.aur_check.outputs.available == 'true'
-        run: sudo -u builder python scripts/run_all.py
+        # sudo resets the environment, so hand GITHUB_TOKEN through explicitly;
+        # upstream.py uses it to hit the GitHub API at 5000/hour instead of 60.
+        run: sudo -u builder env GITHUB_TOKEN="${GITHUB_TOKEN}" python scripts/run_all.py
 
       - name: Save state cache
         uses: actions/cache@v5

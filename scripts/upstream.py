@@ -2,8 +2,10 @@
 """Fetch upstream version information for packages."""
 from __future__ import annotations
 
+import os
 import re
 import subprocess
+import time
 from typing import Any
 
 import requests  # type: ignore[import-untyped]
@@ -13,6 +15,65 @@ DEFAULT_ARCH_MAP = {
     "x86_64": "amd64",
     "aarch64": "arm64",
 }
+
+
+# GitHub API access: unauthenticated calls are limited to 60/hour per IP,
+# which shared CI runner IPs exhaust quickly. GITHUB_TOKEN (provided by
+# GitHub Actions) raises the limit to 5,000/hour.
+_GITHUB_MAX_RETRIES = 3
+_GITHUB_MAX_RETRY_WAIT = 60.0  # never wait longer than this for a limit reset
+
+
+def _github_headers() -> dict[str, str]:
+    headers = {"Accept": "application/vnd.github+json"}
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
+def _rate_limit_wait_seconds(response: Any) -> float | None:
+    """Seconds until the GitHub rate limit resets, if the response says so."""
+    reset = response.headers.get("X-RateLimit-Reset")
+    if reset:
+        try:
+            return max(0.0, float(reset) - time.time())
+        except ValueError:
+            pass
+    retry_after = response.headers.get("Retry-After")
+    if retry_after:
+        try:
+            return max(0.0, float(retry_after))
+        except ValueError:
+            pass
+    return None
+
+
+def _github_get(url: str, timeout: float = 30) -> Any:
+    """GET a GitHub API URL with auth headers and short rate-limit retry.
+
+    Retries only when the response says the limit resets within
+    _GITHUB_MAX_RETRY_WAIT seconds (secondary/abuse limits). A full hourly
+    primary-limit reset fails fast with an actionable message.
+    """
+    headers = _github_headers()
+    for attempt in range(_GITHUB_MAX_RETRIES + 1):
+        r = requests.get(url, headers=headers, timeout=timeout)
+        if r.status_code not in (403, 429):
+            r.raise_for_status()
+            return r
+        if attempt < _GITHUB_MAX_RETRIES:
+            wait = _rate_limit_wait_seconds(r)
+            if wait is not None and wait <= _GITHUB_MAX_RETRY_WAIT:
+                print(f"  [GitHub] ⏳ Rate limited; retrying in {wait:.0f}s")
+                time.sleep(wait)
+                continue
+        token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+        hint = "" if token else (
+            " — set GITHUB_TOKEN (GitHub Actions provides it) to raise the "
+            "unauthenticated 60/hour limit to 5000/hour"
+        )
+        raise RuntimeError(f"GitHub API rate limit exceeded for {url}{hint}")
 
 
 def _match_asset_in_release(
@@ -84,9 +145,7 @@ def github_latest(repo: str, asset_regex: str, interpolate: dict[str, str] | Non
     # Try /releases/latest first
     url = f"https://api.github.com/repos/{repo}/releases/latest"
     print(f"  [GitHub] 📡 Fetching latest release from: {repo}")
-    r = requests.get(url, timeout=30)
-    r.raise_for_status()
-    data = r.json()
+    data = _github_get(url).json()
 
     print(f"  [GitHub] 🏷️  Found tag: {data['tag_name']}")
     result = _match_asset_in_release(data, asset_regex, arch_values_to_try)
@@ -96,10 +155,9 @@ def github_latest(repo: str, asset_regex: str, interpolate: dict[str, str] | Non
     # Fallback: scan recent releases for the newest one carrying the asset
     print(f"  [GitHub] 🔍 No match in latest release, scanning recent releases...")
     list_url = f"https://api.github.com/repos/{repo}/releases?per_page=10"
-    r = requests.get(list_url, timeout=30)
-    r.raise_for_status()
+    releases = _github_get(list_url).json()
 
-    for release in r.json():
+    for release in releases:
         if release.get("prerelease") or release.get("draft"):
             continue
         result = _match_asset_in_release(release, asset_regex, arch_values_to_try)

@@ -423,6 +423,8 @@ class TestGithubReleaseFallback:
         class FakeResponse:
             def __init__(self, payload: Any) -> None:
                 self._payload = payload
+                self.status_code = 200
+                self.headers: dict[str, str] = {}
 
             def raise_for_status(self) -> None:
                 pass
@@ -471,6 +473,9 @@ class TestGithubReleaseFallback:
         }
 
         class FakeResponse:
+            status_code = 200
+            headers: dict[str, str] = {}
+
             def raise_for_status(self) -> None:
                 pass
 
@@ -486,6 +491,131 @@ class TestGithubReleaseFallback:
         assert tag == "3.0.0"
         assert asset_id == 77
         assert sha256 is None
+
+
+class TestGithubRateLimit:
+    """github_latest() authenticates via GITHUB_TOKEN and copes with rate limits.
+
+    Regression: unauthenticated calls from shared CI runner IPs exhaust the
+    60/hour GitHub API limit and fail mid-sync with 403 (run 37315642785).
+    """
+
+    @pytest.fixture(autouse=True)
+    def _upstream(self, monkeypatch: Any) -> Any:
+        sys.path.insert(0, 'scripts')
+        import upstream
+        self.upstream = upstream
+        monkeypatch.delenv('GITHUB_TOKEN', raising=False)
+        monkeypatch.delenv('GH_TOKEN', raising=False)
+        self.sleeps: list[float] = []
+        monkeypatch.setattr(upstream.time, 'sleep',
+                            lambda s: self.sleeps.append(s))
+        yield upstream
+
+    ASSET = {
+        "tag_name": "v1.0.0",
+        "prerelease": False,
+        "draft": False,
+        "assets": [
+            {"name": "app-x86_64.AppImage",
+             "browser_download_url": "https://example.com/app.AppImage",
+             "id": 7, "digest": ""},
+        ],
+    }
+
+    @staticmethod
+    def _response(status: int, headers: dict[str, str] | None = None,
+                  payload: Any = None) -> Any:
+        class FakeResponse:
+            def __init__(self) -> None:
+                self.status_code = status
+                self.headers = headers or {}
+
+            def raise_for_status(self) -> None:
+                if self.status_code >= 400:
+                    raise RuntimeError(f"HTTP {self.status_code}")
+
+            def json(self) -> Any:
+                return payload
+
+        return FakeResponse()
+
+    def test_sends_auth_header_when_token_set(self, monkeypatch: Any) -> None:
+        monkeypatch.setenv('GITHUB_TOKEN', 'gh-token-123')
+        calls: list[dict[str, Any]] = []
+
+        def fake_get(url: str, **kwargs: Any) -> Any:
+            calls.append(kwargs)
+            return self._response(200, {"X-RateLimit-Remaining": "4999"},
+                                  self.ASSET)
+
+        monkeypatch.setattr(self.upstream.requests, 'get', fake_get)
+        tag, url, asset_id, _ = self.upstream.github_latest(
+            "owner/repo", r"^app-${arch}\.AppImage$", {"arch": "x86_64"})
+        assert tag == "1.0.0"
+        assert calls[0]["headers"]["Authorization"] == "Bearer gh-token-123"
+
+    def test_no_auth_header_when_no_token(self, monkeypatch: Any) -> None:
+        calls: list[dict[str, Any]] = []
+
+        def fake_get(url: str, **kwargs: Any) -> Any:
+            calls.append(kwargs)
+            return self._response(200, {}, self.ASSET)
+
+        monkeypatch.setattr(self.upstream.requests, 'get', fake_get)
+        self.upstream.github_latest(
+            "owner/repo", r"^app-${arch}\.AppImage$", {"arch": "x86_64"})
+        assert "Authorization" not in calls[0]["headers"]
+
+    def test_retries_when_limit_resets_soon(self, monkeypatch: Any) -> None:
+        attempts = {"n": 0}
+
+        def fake_get(url: str, **kwargs: Any) -> Any:
+            attempts["n"] += 1
+            if attempts["n"] == 1:
+                return self._response(403, {"Retry-After": "2",
+                                            "X-RateLimit-Remaining": "0"})
+            return self._response(200, {}, self.ASSET)
+
+        monkeypatch.setattr(self.upstream.requests, 'get', fake_get)
+        tag, _, _, _ = self.upstream.github_latest(
+            "owner/repo", r"^app-${arch}\.AppImage$", {"arch": "x86_64"})
+        assert tag == "1.0.0"
+        assert attempts["n"] == 2
+        assert self.sleeps == [2.0]
+
+    def test_fails_fast_when_reset_is_far_away(self, monkeypatch: Any) -> None:
+        import time as _time
+        calls = {"n": 0}
+        reset = str(int(_time.time()) + 3600)
+
+        def fake_get(url: str, **kwargs: Any) -> Any:
+            calls["n"] += 1
+            return self._response(
+                403, {"X-RateLimit-Reset": reset, "X-RateLimit-Remaining": "0"})
+
+        monkeypatch.setattr(self.upstream.requests, 'get', fake_get)
+        with pytest.raises(RuntimeError, match="GITHUB_TOKEN") as excinfo:
+            self.upstream.github_latest(
+                "owner/repo", r"^app-${arch}\.AppImage$", {"arch": "x86_64"})
+        assert calls["n"] == 1  # did not wait for the hourly reset
+        assert self.sleeps == []
+        assert "rate limit exceeded" in str(excinfo.value)
+
+    def test_raises_after_exhausting_retries(self, monkeypatch: Any) -> None:
+        calls = {"n": 0}
+
+        def fake_get(url: str, **kwargs: Any) -> Any:
+            calls["n"] += 1
+            return self._response(403, {"Retry-After": "1",
+                                         "X-RateLimit-Remaining": "0"})
+
+        monkeypatch.setattr(self.upstream.requests, 'get', fake_get)
+        with pytest.raises(RuntimeError, match="rate limit exceeded"):
+            self.upstream.github_latest(
+                "owner/repo", r"^app-${arch}\.AppImage$", {"arch": "x86_64"})
+        assert calls["n"] == self.upstream._GITHUB_MAX_RETRIES + 1
+        assert self.sleeps == [1.0] * self.upstream._GITHUB_MAX_RETRIES
 
 
 class TestArchMapping:
