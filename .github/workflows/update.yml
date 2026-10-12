@@ -8,12 +8,13 @@ on:
     paths:
       - "packages/*.yaml"
 
-jobs:
   sync:
     runs-on: ubuntu-latest
     container:
       image: archlinux
       options: --privileged
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v6
 
