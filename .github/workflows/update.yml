@@ -8,6 +8,7 @@ on:
     paths:
       - "packages/*.yaml"
 
+jobs:
   sync:
     runs-on: ubuntu-latest
     container:
