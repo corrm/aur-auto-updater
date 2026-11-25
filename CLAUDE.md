@@ -55,6 +55,9 @@ ever does.
 # Run sync locally (ALWAYS use uv run)
 uv run python scripts/run_all.py
 
+# Report what sync would publish, without downloading or publishing (PR check)
+uv run python scripts/run_all.py --dry-run
+
 # Validate YAML packages (ALWAYS use uv run)
 uv run python scripts/validate.py
 
@@ -74,7 +77,15 @@ uv run pytest tests/ -v
 
 ## Workflows
 
-- `aur-autosync`: Runs every 6 hours or manually - builds and publishes to AUR
+- `aur-autosync`: the only publishing path. Runs every 6 hours, on manual dispatch, or on a push
+  to `main` that touches `packages/*.yaml` — builds and publishes to AUR. The push trigger is
+  branch-restricted to `main` and pull requests never run this workflow, so an unreviewed branch
+  can never publish under our name (the deploy key only ever exists on these runs).
+- `pr-dry-run`: read-only pull-request check. Runs `scripts/run_all.py --dry-run
+  --changed-since origin/<base>`: reads the upstream version, the AUR RPC and the live PKGBUILD,
+  prints the packaging diff, and reports what merging would publish — nothing is downloaded and
+  nothing is published. The scope is the `packages/*.yaml` the PR touched, or every package when
+  the render engine (`scripts/`, `templates/`, `actions/`, `schema/`) changed.
 - `validate-packages`: Validates YAML configs against schema
 - `Run Tests`: Runs unit tests on `scripts/` and `tests/` changes
 
