@@ -265,7 +265,7 @@ def build(pkgfile: str, dry_run: bool = False) -> dict[str, str] | None:
             if aur_data:
                 in_aur = True
                 aur_ver, aur_rel = _split_version(aur_data.get("Version", ""))
-                live = aur.remote_pkgbuild(pkgname)
+                live = aur.remote_pkgbuild(pkgname, rpc_info=aur_data)
         except Exception as e:
             print(f"[{pkgname}] ⚠️  AUR check failed ({e}); treating as needing publish")
 

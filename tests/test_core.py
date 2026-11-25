@@ -8,9 +8,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
+import aur as aur_module  # noqa: E402
 import build as build_module  # noqa: E402
 import run_all as run_all_module  # noqa: E402
 
@@ -1265,4 +1267,89 @@ class TestDryRun:
 
         assert run_all_module.main() == 0
         assert processed == ["packages/b.yaml"]
+
+
+class TestCgitStaleness:
+    """cgit lags the AUR git repo behind a publish; the RPC is authoritative.
+
+    A lagging cgit copy used to be indistinguishable from a real packaging change, so
+    the package got a pkgrel bump and a republish for content that was already live.
+    """
+
+    RPC = {"Version": "1.0.0-2", "Depends": ["faac", "gstreamer"]}
+    CURRENT = 'pkgname=demo\npkgver=1.0.0\npkgrel=2\ndepends=("faac" "gstreamer")\n'
+    LAGGING = 'pkgname=demo\npkgver=1.0.0\npkgrel=1\ndepends=("faac")\n'
+
+    def test_current_pkgbuild_is_accepted(self) -> None:
+        assert aur_module._pkgbuild_matches_rpc(self.CURRENT, self.RPC) is True
+
+    def test_lagging_pkgrel_is_detected(self) -> None:
+        assert aur_module._pkgbuild_matches_rpc(self.LAGGING, self.RPC) is False
+
+    def test_lagging_depends_is_detected(self) -> None:
+        text = self.CURRENT.replace('"gstreamer"', '"fuse2"')
+        assert aur_module._pkgbuild_matches_rpc(text, self.RPC) is False
+
+    def test_depends_order_is_not_staleness(self) -> None:
+        text = 'pkgname=demo\npkgver=1.0.0\npkgrel=2\ndepends=("gstreamer" "faac")\n'
+        assert aur_module._pkgbuild_matches_rpc(text, self.RPC) is True
+
+    def test_remote_pkgbuild_reads_git_when_cgit_lags(self, monkeypatch: Any) -> None:
+        read_from_git: list[str] = []
+        monkeypatch.setattr(aur_module, "_cgit_pkgbuild", lambda pkgname: self.LAGGING)
+        monkeypatch.setattr(aur_module, "_git_pkgbuild",
+                            lambda pkgname: read_from_git.append(pkgname) or self.CURRENT)
+
+        assert aur_module.remote_pkgbuild("demo", rpc_info=self.RPC) == self.CURRENT
+        assert read_from_git == ["demo"]
+
+    def test_remote_pkgbuild_does_not_clone_when_cgit_is_current(self, monkeypatch: Any) -> None:
+        monkeypatch.setattr(aur_module, "_cgit_pkgbuild", lambda pkgname: self.CURRENT)
+        monkeypatch.setattr(aur_module, "_git_pkgbuild",
+                            lambda pkgname: pytest.fail("must not read git when cgit is current"))
+
+        assert aur_module.remote_pkgbuild("demo", rpc_info=self.RPC) == self.CURRENT
+
+    def test_git_pkgbuild_reads_the_clone_and_cleans_up(self, monkeypatch: Any) -> None:
+        seen: list[str] = []
+
+        def fake_git(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess:
+            dest = cmd[-1]
+            seen.append(dest)
+            Path(dest, "PKGBUILD").write_text(self.CURRENT)
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        monkeypatch.setattr(aur_module, "_git_run_with_retry", fake_git)
+
+        assert aur_module._git_pkgbuild("demo") == self.CURRENT
+        assert seen and not Path(seen[0]).exists()
+
+    def test_git_pkgbuild_returns_none_when_the_clone_fails(self, monkeypatch: Any) -> None:
+        monkeypatch.setattr(
+            aur_module, "_git_run_with_retry",
+            lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, 128, "", "boom"))
+
+        assert aur_module._git_pkgbuild("demo") is None
+
+    def test_lagging_cgit_no_longer_forces_a_pkgrel_bump(self, monkeypatch: Any) -> None:
+        """The real symptom: cgit serving a pre-publish revision of a live package."""
+        repo = Path(__file__).resolve().parent.parent
+        monkeypatch.chdir(repo)
+        url = "https://example.com/Buzz_0.5.30_amd64.AppImage"
+        cfg = yaml.safe_load((repo / "packages" / "buzz-appimage.yaml").read_text())
+
+        # fetch() hands back an already-stripped tag plus the asset's sha256, so no
+        # download happens on the way to the decision under test.
+        monkeypatch.setattr(build_module, "fetch", lambda c: ("0.5.30", url, None, "0" * 64))
+        monkeypatch.setattr(build_module.aur, "info", lambda pkgname: {"Version": "0.5.30-2"})
+        monkeypatch.setattr(
+            build_module.aur, "_cgit_pkgbuild",
+            lambda pkgname: 'pkgname=buzz-appimage\npkgver=0.5.30\npkgrel=1\ndepends=("faac")\n')
+        # ...while the git read returns what is actually published (pkgrel 2, gstreamer).
+        published = build_module.render_pkgbuild(cfg, "0.5.30", 2, url, "SKIP")
+        monkeypatch.setattr(build_module.aur, "_git_pkgbuild", lambda pkgname: published)
+
+        # Up to date -> nothing to publish, instead of a bogus pkgrel bump to 3.
+        assert build_module.build("packages/buzz-appimage.yaml") is None
+
 
