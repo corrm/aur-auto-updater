@@ -8,6 +8,8 @@ license: [Apache-2.0]
 depends:
   - faac
   - fuse2
+  - gst-plugins-good
+  - gstreamer
   - hicolor-icon-theme
   - xdg-utils
 
