@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import time
 from typing import Any
 from pathlib import Path
@@ -127,23 +128,116 @@ def current_version(pkgname: str) -> str | None:
     return version.rsplit("-", 1)[0] if version else None
 
 
-def remote_pkgbuild(pkgname: str) -> str | None:
-    """Fetch the AUR's live PKGBUILD text via cgit — no clone, no SSH.
+def _pkgbuild_scalar(text: str, key: str) -> str | None:
+    """Value of a single-assignment PKGBUILD variable (quotes stripped), or None."""
+    m = re.search(rf'^{key}=("?)(.*?)\1\s*$', text, re.MULTILINE)
+    return m.group(2) if m else None
 
-    Used to detect a packaging change (rendered PKGBUILD differs from what's published)
-    even when the pkgver is unchanged. Raises on network/HTTP errors other than 404.
 
-    Args:
-        pkgname: The AUR package name.
+def _pkgbuild_array(text: str, key: str) -> list[str] | None:
+    """Entries of an assignment like `depends=("a" "b")`, or None when absent."""
+    m = re.search(rf'^{key}=\((.*?)\)\s*$', text, re.MULTILINE | re.DOTALL)
+    if m is None:
+        return None
+    return re.findall(r'"?([^"\s]+)"?', m.group(1))
 
-    Returns:
-        The raw PKGBUILD text, or None if the package has no published PKGBUILD.
+
+def _pkgbuild_matches_rpc(pkgbuild: str, rpc_info: dict) -> bool:
+    """Does a cgit-served PKGBUILD agree with the RPC's current view of the package?
+
+    cgit serves a cached copy that can lag the AUR git repo behind a publish (measured:
+    still serving the previous revision 13 minutes after one). The RPC is current, and
+    version and dependencies are exactly what the change detection reads, so a
+    disagreement on either means the cached text is stale and must not be trusted.
     """
+    pkgver, _, pkgrel = (rpc_info.get("Version") or "").rpartition("-")
+    if not pkgver:
+        return True  # nothing to compare against
+    if _pkgbuild_scalar(pkgbuild, "pkgver") != pkgver:
+        return False
+    if _pkgbuild_scalar(pkgbuild, "pkgrel") != pkgrel:
+        return False
+    depends = rpc_info.get("Depends")
+    if depends is None:
+        return True
+    # Order-insensitive: the RPC is free to order the list however it likes, and a
+    # reorder is not the staleness we are looking for.
+    return sorted(_pkgbuild_array(pkgbuild, "depends") or []) == sorted(depends)
+
+
+def _cgit_pkgbuild(pkgname: str) -> str | None:
+    """PKGBUILD text as cgit serves it. Cheap, but possibly a cached older revision."""
     r = requests.get(CGIT_PKGBUILD_URL, params={"h": pkgname}, timeout=15)
     if r.status_code == 404:
         return None
     r.raise_for_status()
     return r.text
+
+
+def _git_pkgbuild(pkgname: str) -> str | None:
+    """PKGBUILD text read from the AUR git repo itself — authoritative, cache-free.
+
+    Anonymous HTTPS, so no key is needed; used only when cgit is known to be stale.
+    """
+    tmp = tempfile.mkdtemp(prefix="aur-pkgbuild-")
+
+    def reset_attempt() -> None:
+        # A failed clone leaves a non-empty destination, which makes every later
+        # attempt fail before it starts, so clear the directory between tries.
+        shutil.rmtree(tmp, ignore_errors=True)
+        os.makedirs(tmp, exist_ok=True)
+
+    try:
+        result = _git_run_with_retry(
+            ["git", "clone", "--depth", "1", "--quiet", f"https://aur.archlinux.org/{pkgname}.git", tmp],
+            label=f"read {pkgname} PKGBUILD",
+            attempts=2,
+            backoff=2.0,
+            timeout=60,
+            on_retry=reset_attempt,
+        )
+        if result.returncode != 0:
+            print(f"  [AUR] ❌ Could not read {pkgname} from git: {result.stderr.strip()}")
+            return None
+        path = Path(tmp) / "PKGBUILD"
+        return path.read_text() if path.exists() else None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def remote_pkgbuild(pkgname: str, rpc_info: dict | None = None) -> str | None:
+    """Fetch the AUR's live PKGBUILD text — no clone needed, no SSH.
+
+    Used to detect a packaging change (rendered PKGBUILD differs from what's published)
+    even when the pkgver is unchanged. Raises on network/HTTP errors other than 404.
+
+    The cgit copy is verified against the RPC metadata, which is current; when they
+    disagree the text is re-read from the AUR git repo. Without that check a cgit cache
+    lagging a just-finished publish looks like a packaging change, and the package gets
+    a pointless pkgrel bump for content that is already live.
+
+    Args:
+        pkgname: The AUR package name.
+        rpc_info: The package's `info()` result, when the caller already has it.
+
+    Returns:
+        The raw PKGBUILD text, or None if the package has no published PKGBUILD.
+    """
+    text = _cgit_pkgbuild(pkgname)
+    if text is None:
+        return None
+
+    try:
+        rpc_info = info(pkgname) if rpc_info is None else rpc_info
+    except Exception as e:
+        print(f"  [AUR] ⚠️  Could not verify {pkgname} PKGBUILD freshness ({e}); using cgit as-is")
+        return text
+
+    if rpc_info is None or _pkgbuild_matches_rpc(text, rpc_info):
+        return text
+
+    print(f"  [AUR] 🐢 cgit copy of {pkgname} lags the AUR; reading the PKGBUILD from git instead")
+    return _git_pkgbuild(pkgname) or text
 
 
 def exists(pkgname: str) -> bool:
