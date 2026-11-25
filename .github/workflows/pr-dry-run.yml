@@ -1,0 +1,53 @@
+name: PR Dry Run
+
+# Read-only pull-request check: reports what merging the PR would publish, scoped
+# to the packages the PR actually touches (or every package when the render engine
+# changed). It never downloads sources, never builds, and never holds the AUR
+# deploy key — only the AUR RPC and the live PKGBUILD are read — so a pull request
+# cannot publish anything under our name. Publishing lives in update.yml, which
+# only runs on main, on the schedule, or on manual dispatch.
+on:
+  pull_request:
+    paths:
+      - "packages/**"
+      - "schema/**"
+      - "scripts/**"
+      - "templates/**"
+      - "actions/**"
+      - ".github/workflows/pr-dry-run.yml"
+
+jobs:
+  dry-run:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # the base branch is needed for --changed-since
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          # Repo has no lockfile/pyproject; suppress the "no file matched" annotation.
+          cache-dependency-glob: ""
+
+      - name: Create venv and install deps
+        run: |
+          uv venv
+          source .venv/bin/activate
+          uv pip install pyyaml requests jinja2
+
+      - name: Dry-run the affected packages
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          source .venv/bin/activate
+          python scripts/run_all.py --dry-run --changed-since "origin/${BASE_REF}"
+
+      - name: Upload report
+        uses: actions/upload-artifact@v7
+        if: hashFiles('report.json') != ''
+        with:
+          name: dry-run-report
+          path: report.json

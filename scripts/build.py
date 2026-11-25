@@ -2,6 +2,7 @@
 """Build AUR packages from configuration files."""
 from __future__ import annotations
 
+import difflib
 import hashlib
 import json
 import os
@@ -163,6 +164,23 @@ def _pkgbuild_signature(text: str) -> str:
     )
 
 
+def _print_pkgbuild_diff(pkgname: str, live: str, would: str) -> None:
+    """Print what a republish would actually change, as a unified diff.
+
+    Compared on the normalized signature (pkgrel/checksum lines excluded), so an
+    unchanged package shows nothing and a real packaging change is reviewable.
+    """
+    diff = difflib.unified_diff(
+        _pkgbuild_signature(live).splitlines(),
+        _pkgbuild_signature(would).splitlines(),
+        fromfile=f"aur/{pkgname}/PKGBUILD (live)",
+        tofile=f"{pkgname} (would publish)",
+        lineterm="",
+    )
+    for line in diff:
+        print(f"         {line}")
+
+
 def _split_version(version: str) -> tuple[str | None, int]:
     """Split an AUR 'pkgver-pkgrel' string into (pkgver, pkgrel int). Defaults pkgrel=1."""
     if not version:
@@ -176,11 +194,13 @@ def _split_version(version: str) -> tuple[str | None, int]:
     return version, 1
 
 
-def build(pkgfile: str) -> dict[str, str] | None:
+def build(pkgfile: str, dry_run: bool = False) -> dict[str, str] | None:
     """Build a package from configuration file.
 
     Args:
         pkgfile: Path to YAML package configuration file
+        dry_run: Report what would be published without downloading sources,
+            writing local state, or touching the AUR. Used by PR checks.
 
     Returns:
         Dictionary with 'pkgname' and 'status'/'error' keys, or None if no update needed
@@ -190,7 +210,7 @@ def build(pkgfile: str) -> dict[str, str] | None:
         yaml.YAMLError: If config file is invalid YAML
     """
     print(f"\n{'='*60}")
-    print(f"[BUILD] Processing: {pkgfile}")
+    print(f"[BUILD] Processing: {pkgfile}{' (DRY RUN)' if dry_run else ''}")
     print(f"{'='*60}")
 
     cfg = yaml.safe_load(Path(pkgfile).read_text())
@@ -251,8 +271,9 @@ def build(pkgfile: str) -> dict[str, str] | None:
 
         if in_aur and live is not None and _pkgbuild_signature(live) == sig:
             print(f"[{pkgname}] ✅ AUR already up to date at {aur_ver}-{aur_rel} - skipping (no clone)")
-            state.update({"last_version": tag, "last_success": True, "last_error": None})
-            save_state(state_path, state)
+            if not dry_run:
+                state.update({"last_version": tag, "last_success": True, "last_error": None})
+                save_state(state_path, state)
             return None
 
         is_new_package = not in_aur
@@ -266,8 +287,15 @@ def build(pkgfile: str) -> dict[str, str] | None:
             pkgrel = 1
             print(f"[{pkgname}] 🔄 VERSION CHANGE: {aur_ver} → {pkgver}")
 
+        if live is not None:
+            print(f"[{pkgname}] 📝 Packaging diff vs AUR:")
+            _print_pkgbuild_diff(pkgname, live, compare)
+
         # Real checksum (download only now that we know we're publishing).
-        if upstream_sha256:
+        if dry_run:
+            checksum = upstream_sha256 or "SKIP"
+            print(f"[{pkgname}] 🧪 DRY RUN - not downloading sources, not publishing")
+        elif upstream_sha256:
             checksum = upstream_sha256
         else:
             print(f"[{pkgname}] 📥 Calculating SHA256 checksum...")
@@ -285,14 +313,17 @@ def build(pkgfile: str) -> dict[str, str] | None:
         for line in rendered.split('\n')[:10]:
             print(f"         {line}")
 
-        state.update({
-            "last_version": tag,
-            "last_asset_id": asset_id,
-            "last_success": True,
-            "last_error": None,
-            "retry_count": 0
-        })
-        save_state(state_path, state)
+        if dry_run:
+            print(f"[{pkgname}] 🧪 DRY RUN - local state left untouched")
+        else:
+            state.update({
+                "last_version": tag,
+                "last_asset_id": asset_id,
+                "last_success": True,
+                "last_error": None,
+                "retry_count": 0
+            })
+            save_state(state_path, state)
 
         status = "created" if is_new_package else "updated"
         print(f"[{pkgname}] ✅ SUCCESS - Package {status.upper()} (version {tag}-{pkgrel})")

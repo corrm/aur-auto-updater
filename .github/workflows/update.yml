@@ -4,7 +4,13 @@ on:
   schedule:
     - cron: "0 */3 * * *"
   workflow_dispatch:
+  # Publish only from main. A feature-branch push must never reach the AUR: the
+  # publish step holds the AUR deploy key, so an unreviewed branch would be able
+  # to push whatever it likes under our name. Pull requests never run this
+  # workflow at all — see pr-dry-run.yml.
   push:
+    branches:
+      - main
     paths:
       - "packages/*.yaml"
 

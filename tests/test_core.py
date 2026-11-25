@@ -1,11 +1,18 @@
 """Unit tests for AUR auto-updater core modules."""
+import json
 import os
 import re
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any
 
 import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+
+import build as build_module  # noqa: E402
+import run_all as run_all_module  # noqa: E402
 
 
 class TestTagParsing:
@@ -1179,3 +1186,83 @@ class TestPublishUsesBuildDecision:
                                        {"pkgname": "c"}])
         assert calls == [("a", True), ("b", False), ("c", None)]
         assert len(report["published"]) == 3
+
+
+class TestDryRun:
+    """A dry run must be read-only: no source download, no state write, no publish.
+
+    This is the guarantee that lets pull requests run the sync without any chance
+    of reaching the AUR.
+    """
+
+    def test_build_dry_run_skips_download_and_state(self, monkeypatch: Any) -> None:
+        monkeypatch.chdir(Path(__file__).resolve().parent.parent)
+        monkeypatch.setattr(build_module, "fetch",
+                            lambda cfg: ("v1.0.0", "https://example.com/x.AppImage", None, None))
+        monkeypatch.setattr(build_module.aur, "info", lambda pkgname: {"Version": "1.0.0-1"})
+        monkeypatch.setattr(build_module.aur, "remote_pkgbuild",
+                            lambda pkgname: "pkgname=z\npkgver=1.0.0\npkgrel=1\n")
+
+        def _boom(*args: Any, **kwargs: Any) -> None:
+            raise AssertionError("a dry run must not download sources or persist state")
+
+        monkeypatch.setattr(build_module, "sha256", _boom)
+        monkeypatch.setattr(build_module, "save_state", _boom)
+
+        # The live PKGBUILD differs from what we would render, so a republish is due;
+        # the dry run must still stop short of the download and the state write.
+        result = build_module.build("packages/buzz-appimage.yaml", dry_run=True)
+        assert result == {"pkgname": "buzz-appimage", "status": "updated"}
+
+    def test_run_all_dry_run_never_publishes(self, monkeypatch: Any, tmp_path: Any) -> None:
+        (tmp_path / "packages").mkdir()
+        (tmp_path / "packages" / "demo.yaml").write_text("pkgname: demo\n")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(run_all_module, "build",
+                            lambda pkgfile, dry_run=False: {"pkgname": "demo", "status": "updated"})
+
+        def _boom(*args: Any, **kwargs: Any) -> None:
+            raise AssertionError("a dry run must never publish to AUR")
+
+        monkeypatch.setattr(run_all_module, "publish_all", _boom)
+        monkeypatch.setattr(sys, "argv", ["run_all.py", "--dry-run"])
+
+        assert run_all_module.main() == 0
+        report = json.loads((tmp_path / "report.json").read_text())
+        assert report["summary"]["dry_run"] is True
+        assert report["summary"]["published"] == 0
+        assert report["updated"] == [{"pkgname": "demo", "status": "updated"}]
+
+    def test_select_packages_scopes_to_touched_configs(self) -> None:
+        all_pkgs = ["packages/a.yaml", "packages/b.yaml", "packages/c.yaml"]
+        assert run_all_module.select_packages(["packages/b.yaml"], all_pkgs) == ["packages/b.yaml"]
+        # A render-engine change can alter every package's PKGBUILD.
+        assert run_all_module.select_packages(["templates/appimage.PKGBUILD.j2"], all_pkgs) == all_pkgs
+        # A removed config has nothing left to check.
+        assert run_all_module.select_packages(["packages/gone.yaml"], all_pkgs) == []
+
+    def test_dry_run_is_scoped_and_still_never_publishes(self, monkeypatch: Any,
+                                                        tmp_path: Any) -> None:
+        (tmp_path / "packages").mkdir()
+        for name in ("a", "b"):
+            (tmp_path / "packages" / f"{name}.yaml").write_text(f"pkgname: {name}\n")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(run_all_module, "changed_files_since",
+                            lambda ref: ["packages/b.yaml"])
+        processed: list[str] = []
+
+        def _record(pkgfile: str, dry_run: bool = False) -> dict[str, str]:
+            processed.append(pkgfile)
+            return {"pkgname": "b", "status": "updated"}
+
+        def _boom(*args: Any, **kwargs: Any) -> None:
+            raise AssertionError("a scoped dry run must never publish to AUR")
+
+        monkeypatch.setattr(run_all_module, "build", _record)
+        monkeypatch.setattr(run_all_module, "publish_all", _boom)
+        monkeypatch.setattr(sys, "argv",
+                            ["run_all.py", "--dry-run", "--changed-since", "origin/main"])
+
+        assert run_all_module.main() == 0
+        assert processed == ["packages/b.yaml"]
+
